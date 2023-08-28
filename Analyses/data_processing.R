@@ -140,9 +140,10 @@ ERYCUN_abs <- ERYCUN_abs_raw %>%
 
   
   
-#### Loading in the fire lane data 
+#### Loading in the Royce Ranch fire lane data 
 # Removing some extraneous location info
 # removing redundant demographic information columns (columns with change in size and in number of stems)
+# removing measurement of sand accretion
 # creating unique id for each plant
 # Then pivoting to combine the columns for each vital rate measurement
 # And recode the survival column. Archbold uses an idiosyncratic code to represent whether plants are seedling, alive, dead, previously dead. (0 = dead; 1 = alive; 2 = not found; 3 = new adult; 4 = not yet born; 5 = seedling; 6 = loose tag/pulled; 7 = putative seedling; 9 = previously dead, flag pulled)
@@ -150,13 +151,14 @@ ERYCUN_abs <- ERYCUN_abs_raw %>%
 # And correcting cases where tag was not found  in multiple years. Assuming plant is dead, unless it is re-found in the following year or the next
 
 ERYCUN_apfi <- ERYCUN_apfi_raw %>%
-  dplyr::select(-pull, -quad) %>% 
+  dplyr::select(-pull) %>% 
   dplyr::select(-contains("rgr"), -contains("chst")) %>% 
-  mutate(row_id = row_number(), patch = "Firelane") %>%
-  mutate(plant_id = paste(patch, plant,TP, row_id, sep = "_")) %>% 
+  dplyr::select(-starts_with("sa")) %>% 
+  mutate(row_id = row_number(), patch = "Firelane") %>% 
+  mutate(plant_id = paste(patch, quad, plant,TP, row_id, sep = "_")) %>% 
   mutate(across(everything(), as.character)) %>% 
   rename(first_year = yr1) %>% 
-  pivot_longer(cols = !c(plant_id, Site_tag, patch, plant, TP, row_id, first_year), names_to = c("measurement", "census_year"), names_sep = "(?<=[A-Za-z])(?=[0-9])") %>% 
+  pivot_longer(cols = !c(plant_id, Site_tag, patch, quad, plant, TP, row_id, first_year), names_to = c("measurement", "census_year"), names_sep = "(?<=[A-Za-z])(?=[0-9])") %>% 
   mutate(measurement = case_match(measurement, 
                                 "s" ~ "ARCHBOLD_surv", "a" ~ "ARCHBOLD_surv",
                                 "stg" ~ "assigned_stage",
@@ -205,7 +207,7 @@ ERYCUN_apfi <- ERYCUN_apfi_raw %>%
                                 89 ~ 1989,
                                 88 ~ 1988,
                                 .default = as.numeric(census_year))) %>% 
-  pivot_wider(id_cols = c(plant_id, Site_tag, patch, plant, TP, row_id, first_year, census_year), names_from = measurement, values_from = value) %>% 
+  pivot_wider(id_cols = c(plant_id, Site_tag, patch, quad, plant, TP, row_id, first_year, census_year), names_from = measurement, values_from = value) %>% 
   mutate(ARCHBOLD_surv = case_when( ARCHBOLD_surv == 20 ~ 2, TRUE ~ as.numeric(ARCHBOLD_surv)),
          surv = case_match(as.numeric(ARCHBOLD_surv),
                            0 ~ 0,
@@ -235,7 +237,28 @@ ERYCUN_apfi <- ERYCUN_apfi_raw %>%
   select(plant_id, ARCHBOLD_surv, first_year, census_year, surv, ros_diameter)
   
   
+#### Loading in the Royce Ranch Scrub data
+# removing some extraneous meta columns
+# removing redundant demographic information columns (several contain the change in flowering stem number or rosette diameter between years)
+# removing measurement of sand accretion
+# removing comments and record of burn/mowing
+# Removing the assigned stage information from the dataset since we will work with the raw size measurements
+# creating a unique id for each plant
   
+
+ERYCUN_apsc <- ERYCUN_apsc_raw %>%
+  dplyr::select(-microhabitat, -pull, -pull_temp, -pull98, -oldtag, -bigq, -s18) %>% 
+  dplyr::select(-contains("annsur"), -contains("rgr"), -contains("chst")) %>% 
+  dplyr::select(-starts_with("sa")) %>% 
+  dplyr::select(-starts_with("comm"), -contains("mow"), -contains("burn")) %>% 
+  dplyr::select(-starts_with("stg")) %>% 
+  mutate(row_id = row_number(), patch = "Scrub") %>% 
+  mutate(plant_id = paste(patch, quad, plant,TP, row_id, sep = "_")) %>% 
+  select(Site_tag, patch, quad, plant, TP, row_id, plant_id)
+  
+  
+
+
 
 
   
