@@ -14,6 +14,12 @@ library(renv) # track package versions
 library(tidyverse)
 library(readxl)
 
+
+quote_bare <- function( ... ){
+  substitute( alist(...) ) %>% 
+    eval( ) %>% 
+    sapply( deparse )
+}
 ####################################################################################
 ###### Loading in each data for each species #######################################
 ####################################################################################
@@ -33,6 +39,11 @@ ERYCUN_apsc_raw <- read_excel(path = paste0(filepath,"/UM demographic models/Ec 
   mutate(Site_tag = "royce_ranch")
 
 
+# Reading in data for Liatris ohlingerae (LIAOHL)
+LIAOHL_raw <- read_csv(file = paste0(filepath, "/UM demographic models/LoDem_2017.csv"))
+
+
+
 
 # Reading in data for Balduina angustifolia (BALANG)
 BALANG_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/BaCf_data6-2-12.xls"), sheet = "Badata_may2012")
@@ -41,9 +52,6 @@ BALANG_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/Ba
 CHAFAS_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/BaCf_data6-2-12.xls"), sheet = "Cfdata_may2012")
 
 
-
-# Reading in data for Liatris ohlingerae (LIAOHL)
-LIAOHL_raw <- read_csv(file = paste0(filepath, "/UM demographic models/LoDem_2017.csv"))
 
 ####################################################################################
 ###### Cleaning and merging together ERYCUN ########################################
@@ -404,18 +412,6 @@ ERYCUN <- ERYCUN_abs %>%
          year.t, ros_diameter.t, max_stem_height.t, flw_stem.t, flw_head.t, herb_count.t)
 
 
-####################################################################################
-###### Cleaning and merging together BALANG #######################################
-####################################################################################
-# Balduina angustifolia data was collected by Beth Stephens, starting in 2009. The data includes seed addition experiments into different microhabitats as well as monitoring of establishment and survival growth and reproduction during two years. They collected 
-
-# I'm setting up a zoom call because I don't even know where to start here.
-
-
-
-
-
-
 
 
 ####################################################################################
@@ -551,6 +547,128 @@ LIAOHL <- LIAOHL_temp %>%
   dplyr::select(plant_id, pop, plt_no, id, tp, row_id, first_year, census_year,
                 year.t1, ARCHBOLD_surv, surv.t1, total_height.t1, flw_stem.t1, flw_head.t1, herb_count_stem.t1, herb_count_head.t1, num_rosettes.t1, num_leaves.t1,
                 year.t, total_height.t, flw_stem.t, flw_head.t, herb_count_stem.t, herb_count_head.t, num_rosettes.t, num_leaves.t)
+
+
+
+
+
+
+
+####################################################################################
+###### Cleaning and merging together BALANG #######################################
+####################################################################################
+# Balduina angustifolia data was collected by Beth Stephens, starting in 2009. The data includes seed addition experiments into different microhabitats as well as monitoring of establishment and survival growth and reproduction during two years. she collected data monthly.
+# The data file is a bit tricky because the raw demographic counts (size/repro) are in messy columns
+# Many of the columns are unnamed/undernear a set of merged cells which have the date of the census. 
+# There are also several columns in the BALANG sheet that are named CF which is the code for CHAFAS, but these are typos and should be bf. I'm correcting that in the list.
+# The spreadsheet also includes separate sites, listed out vertically with their own column names. And do I am dropping those columns. The sites have slightly different dates for the germination census, but within the same months. I'm reformatting the months to make them more consistent
+
+
+BALANG_colnames <- c("habitat", "site", 	"microsite",	"point",	"primary_shrub",	"secondary_shrub", "tag", 
+                     "new Ba seedlings;5/26/09",
+                     "estab Ba seedlings;6/5/09",	"new Ba seedlings;6/5/09", 
+                     "estab Ba seedlings;6/9/09",	"new Ba seedlings;6/9/09", 
+                     "estab Ba seedlings;6/18/09", "new Ba seedlings;6/18/09", 
+                     "estab Ba seedlings;6/24/09",	"new Ba seedlings;6/24/09",
+                     "estab Ba seedlings;7/23/09","new Ba seedlings;7/23/09", 
+                     "estab Ba seedlings;8/18/09",	"new Ba seedlings;8/18/09", 
+                     "estab Ba seedlings;9/21/09","new Ba seedlings;9/21/09", 
+                     "estab Ba seedlings;10/29/09","new Ba seedlings;10/29/09", 
+                     "estab Ba seedlings;11/23/09",	"new Ba seedlings;11/23/09", 
+                     "estab Ba seedlings;12/16/09",	"new Ba seedlings;12/16/09",
+                     "estab Ba seedlings;1/20/10",	"new Ba seedlings;1/20/10", 
+                     "estab Ba seedlings;2/17/10","new Ba seedlings;2/17/10", 
+                     "estab Ba seedlings;3/24/10","new Ba seedlings;3/24/10", 
+                     "estab Ba seedlings;4/27/10",	"new Ba seedlings;4/27/10", 
+                     "estab Ba seedlings;5/27/10",	"new Ba seedlings;5/27/10", 
+                     "estab Ba seedlings;6/30/10",	"new Ba seedlings;6/30/10", 
+                     "estab Ba seedlings;7/30/10",	"new Ba seedlings;7/30/10", 
+                     "estab Ba seedlings;8/30/10",	"new Ba seedlings;8/30/10", 
+                     "estab Ba seedlings;9/29/10",	"new Ba seedlings;9/29/10", 
+                     "estab Ba seedlings;10/27/10",	"new Ba seedlings;10/27/10", 
+                     "estab Ba seedlings;11/24/10",	"new Ba seedlings;11/24/10", 
+                     "estab Ba seedlings;12/?/2010","new Ba seedlings;12/?/2010", 
+                     "estab Ba seedlings;1/15/11",	"new Ba seedlings;1/15/11", 
+                     "estab Ba sdlings;2/?/2011","new Ba sdlings;2/?/2011",   
+                     "estab Ba sdlings;3/?/2011","new Ba sdlings;3/?/2011",   
+                     "estab Ba sdlings;4/19/11","new Ba sdlings;4/19/11",   
+                     "estab Ba sdlings;5/18/11","new Ba sdlings;5/18/11",	 
+                     "estab Ba sdlings;6/16/11","new Ba sdlings;6/16/11",   
+                     "estab Ba seedling;7/27/11",	"new Ba seedlings;7/27/11", 
+                     "estab Ba seedling;8/31/11","new Ba seedlings;8/31/11", 
+                     "estab Ba seedling;9/23/11",	"new Ba seedlings;9/23/11", 
+                     "estab Ba seedling;10/26/11",	"new Ba seedlings;10/26/11", 
+                     "estab Ba seedling;11/30/11",	"new Ba seedlings;11/30/11", 
+                     "estab Ba seedlings;12/?/2011","new Ba seedlings;12/?/2011", 
+                     "estab Ba seedlings;1/?/2012","new Ba seedlings;1/?/2012", 
+                     "estab Ba seedlings;2/?/2012","new Ba seedlings;2/?/2012", 
+                     "estab Ba seedlings;03/-/2012","new Ba seedlings;03/-/2012", 
+                     "estab Ba seedlings;04/-/2012","new Ba seedlings;04/-/2012", 
+                     "estab Ba seedlings;05/-/2012","new Ba seedlings;05/-/2012", 
+                     "sum", 
+                     paste0("height_", 1:4,";", "5/27/10"),
+                     paste0("height_", 1:5,";", "6/30/10"),
+                     paste0("height_", 1:4,";", "7/30/10"),
+                     paste0("height_", 1:5,";", "8/30/10"),
+                     paste0("height_", 1:4,";", "9/29/10"),
+                     paste0("height_", 1:4,"_dupe",";", "9/29/10"),
+                     paste0("height_", 1:4,";", "10/27/10"),
+                     "height_1;11/24/10",
+                     paste0("height_", 1:7,";", "12/?/2010"),
+                     paste0("height_", 1:7,";", "1/26/11"),
+                     paste0("height_", 1:4,";", "3/-/2011"),
+                     paste0("height_", 1:8,";", "4/-/2011"),
+                     paste0("height_", 1:7,";", "5/-/2011"),
+                     paste0("height_", 1:7,";", "6/16/11"),
+                     paste0("height_", 1:7,";", "7/27/11"),
+                     paste0("height_", 1:6,";", "8/31/11"),
+                     paste0("height_", 1:6,";", "09/-/2011"),
+                     paste0("height_", 1:5,";", "10/-/2011"),
+                     "height_1;11/-/2011",
+                     paste0("height_", 1:5,";", "12/-/2011"),
+                     paste0("height_", 1:5,";", "01/-/2012"),
+                     paste0("height_", 1:6,";", "02/-/2012"),
+                     paste0("height_", 1:5,";", "03/-/2012"),
+                     paste0("height_", 1:4,";", "04/-/2012"),
+                     paste0("height_", 1:4,";", "05/-/2012"))
+
+BALANG_renamed <- BALANG_raw
+
+colnames(BALANG_renamed) <- BALANG_colnames
+
+# Dropping the secondary column names within the spreadsheet
+# then pivoting the germination counts to have them in a single column. The germination counts start in May 2009 and the first size measurements occur in May 2010
+# Each subplot has a unique tag, with multiple plants inside of it.
+# The columns for height measurements for 9/29/10 seem to be duplicated. The only difference for the set of columns is a place where the tag number was copied over, so I am dropping these columns. The census for 10/2010 seems a bit funky with one measurement that might be too small, no census for 11/2010, and then 12/2010 seems like there was a lot of turnover in the plots and I'm worried that they column order may not always correspond to the plant id
+# I'm trying to make an id for each individual seedling....
+
+
+
+#we want each transition year for each plant to be an individual row, so I am pivoting wider to split up the height measurements and then pivoting longer to get individual plants. I need to figure out how to get the germinants to be individual rows
+# Then I will split out the string in the height column to keep track of flowering, etc.
+
+BALANG_seedlings <- BALANG_renamed %>% 
+  filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% 
+  select(-sum,-contains("dupe"), -primary_shrub, -secondary_shrub, -contains("height")) %>%
+  mutate(across(everything(), as.character)) %>% 
+  pivot_longer(cols = -c(quote_bare(habitat, site, microsite, point, tag)), names_to = c("name","date"), names_pattern = "(.*)(?:[;])(.*)", values_to = "measurement") %>% 
+  mutate(name = case_when(name == "new Ba seedlings" | name == "new Ba sdlings" ~ "new_sdlg_count",
+                          name == "estab Ba seedlings" | name == "estab Ba sdlings" | name == "estab Ba seedling" ~ "estab_sdlg_count", TRUE ~ name)) %>% 
+  mutate(month = lubridate::month(lubridate::mdy(date)),
+         year = lubridate::year(lubridate::mdy(date))) %>% 
+  pivot_wider(id_cols = c(quote_bare(habitat, site, microsite, point, tag, date, month, year)), names_from = name, values_from = measurement) %>% 
+  mutate(estab_sdlg_count = as.numeric(str_remove(estab_sdlg_count, "[?*]"))) %>% 
+  mutate(individ_sdlg = case_when(!is.na(estab_sdlg_count) ~ paste0(1:estab_sdlg_count, collapse = " ", sep = ";"),
+                                  TRUE ~ individ_sdlg))
+
+
+
+  pivot_longer(cols = contains("height"), names_to = c("plant_no"), names_prefix = "height_", values_to = "height") %>% 
+  mutate(plant_id = paste(tag, plant_no, sep = "_"))
+  
+  
+
+
 
 
 
