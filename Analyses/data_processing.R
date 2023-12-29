@@ -559,9 +559,9 @@ LIAOHL <- LIAOHL_temp %>%
 ####################################################################################
 # Balduina angustifolia data was collected by Beth Stephens, starting in 2009. The data includes seed addition experiments into different microhabitats as well as monitoring of establishment and survival growth and reproduction during two years. she collected data monthly.
 # The data file is a bit tricky because the raw demographic counts (size/repro) are in messy columns
-# Many of the columns are unnamed/undernear a set of merged cells which have the date of the census. 
+# Many of the columns are unnamed/underneath a set of merged cells which have the date of the census. 
 # There are also several columns in the BALANG sheet that are named CF which is the code for CHAFAS, but these are typos and should be bf. I'm correcting that in the list.
-# The spreadsheet also includes separate sites, listed out vertically with their own column names. And do I am dropping those columns. The sites have slightly different dates for the germination census, but within the same months. I'm reformatting the months to make them more consistent
+# The spreadsheet also includes separate sites, listed out vertically with their own column names. And so I am dropping those columns. The sites have slightly different dates for the germination census, but within the same months. I'm reformatting the months to make them more consistent
 
 
 BALANG_colnames <- c("habitat", "site", 	"microsite",	"point",	"primary_shrub",	"secondary_shrub", "tag", 
@@ -640,12 +640,7 @@ colnames(BALANG_renamed) <- BALANG_colnames
 # then pivoting the germination counts to have them in a single column. The germination counts start in May 2009 and the first size measurements occur in May 2010
 # Each subplot has a unique tag, with multiple plants inside of it.
 # The columns for height measurements for 9/29/10 seem to be duplicated. The only difference for the set of columns is a place where the tag number was copied over, so I am dropping these columns. The census for 10/2010 seems a bit funky with one measurement that might be too small, no census for 11/2010, and then 12/2010 seems like there was a lot of turnover in the plots and I'm worried that they column order may not always correspond to the plant id
-# I'm trying to make an id for each individual seedling....
-
-
-
-#we want each transition year for each plant to be an individual row, so I am pivoting wider to split up the height measurements and then pivoting longer to get individual plants. I need to figure out how to get the germinants to be individual rows
-# Then I will split out the string in the height column to keep track of flowering, etc.
+# Currently have the germinants as individual rows, but realizing that it is probably best just to keep the germination data separate because I don't trust that the row order actually tracks the individual plants. It's impossible to tell which of the germinants survived/died before the height measurements start to be recorded.
 
 BALANG_seedlings <- BALANG_renamed %>% 
   filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% 
@@ -656,20 +651,53 @@ BALANG_seedlings <- BALANG_renamed %>%
                           name == "estab Ba seedlings" | name == "estab Ba sdlings" | name == "estab Ba seedling" ~ "estab_sdlg_count", TRUE ~ name)) %>% 
   mutate(month = lubridate::month(lubridate::mdy(date)),
          year = lubridate::year(lubridate::mdy(date))) %>% 
-  pivot_wider(id_cols = c(quote_bare(habitat, site, microsite, point, tag, date, month, year)), names_from = name, values_from = measurement) %>% 
+  pivot_wider(id_cols = c(quote_bare(habitat, site, microsite, point, tag, date, month, year)), names_from = name, values_from = measurement)  %>% 
   mutate(estab_sdlg_count = as.numeric(str_remove(estab_sdlg_count, "[?*]"))) %>% 
-  mutate(individ_sdlg = case_when(!is.na(estab_sdlg_count) ~ paste0(1:estab_sdlg_count, collapse = " ", sep = ";"),
-                                  TRUE ~ individ_sdlg))
-
+  group_by(tag, date) %>% 
+  filter(!is.na(new_sdlg_count) & !is.na(estab_sdlg_count)) %>% 
+  mutate(indiv_sdlg_list = case_when(!is.na(estab_sdlg_count) & estab_sdlg_count > 0 ~ paste(1:estab_sdlg_count, collapse = ";"),
+                            TRUE ~ NA),
+         indiv_sdlg_birth = case_when(!is.na(new_sdlg_count) & new_sdlg_count > 0 ~ paste(1:new_sdlg_count, collapse = ";"))) %>% 
+  ungroup() %>% 
+  mutate(lead_indiv_sdlg_list = lead(indiv_sdlg_list)) %>% 
+  separate(lead_indiv_sdlg_list, ";", into = paste0("seedling",(1: max(BALANG_seedlings$estab_sdlg_count))), fill = "right") %>% 
+  pivot_longer(cols = starts_with("seedling"), names_to = "seedling_id", values_to = "seedling_value") %>% 
+  mutate(seed_surv = case_when(seedling_value >= 1 ~ 1, TRUE ~ 0))
 
 
   pivot_longer(cols = contains("height"), names_to = c("plant_no"), names_prefix = "height_", values_to = "height") %>% 
   mutate(plant_id = paste(tag, plant_no, sep = "_"))
   
   
-
-
-
+# the growth data for individual plants is messy, but it is at least tracking clear individuals, so we will keep the two datasets separate. 
+  #we want each transition year for each plant to be an individual row, so I am pivoting longer to get individual plants then separating to split up the height measurements . 
+  # Then I will split out the string in the height column to keep track of flowering, etc.
+  # Using stringr to pull out the height number which is always first, then extracting the number before the strings "br" and "bu" for "branches" and "buds" respectively.
+  
+  
+BALANG_growth <- BALANG_renamed %>% 
+  filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% 
+  select(-sum,-contains("dupe"), -primary_shrub, -secondary_shrub, -contains("BA sdlings"), -contains("BA seedling")) %>% 
+  mutate(across(everything(), as.character)) %>% 
+  pivot_longer(cols = starts_with("height"), names_sep = ";", names_to = c("id", "date")) %>% 
+  mutate(height = parse_number(value)) %>% 
+  mutate(branches = as.numeric(str_extract(value, "\\d+(?=\\sbr)|\\d+(?=\\?\\sBr)")),
+         top_branches = as.numeric(str_extract(value, "\\d+(?=\\st\\sbr)|\\d+(?=\\stop\\sbr)")),
+         mid_branches = as.numeric(str_extract(value, "\\d+(?=\\sm\\sbr)|\\d+(?=\\smid\\sbr)")),
+         bottom_branches = as.numeric(str_extract(value, "\\d+(?=\\sb\\sbr)|\\d+(?=\\sbot\\sbr)|\\d+(?=\\sbottom\\sbr)"))) %>% 
+  mutate_at(vars(branches, top_branches, mid_branches, bottom_branches), ~replace_na(.,  0)) %>% 
+  mutate(branch_count = branches+top_branches+mid_branches+bottom_branches) %>% 
+  mutate(buds = as.numeric(str_extract(value, "\\d+(?=\\sbu)")))
+                                
+                                
+                                
+                                
+                          grepl("t br", value) ~ sum(as.numeric(str_extract(value, "\\d+(?=\\st\\sbr)")), as.numeric(str_extract(value, "\\d+(?=\\smid\\sbr)")), na.rm = TRUE)))
+         
+         
+         
+         
+         bud = str_extract(value, "\\d+(?=\\sbu)"))
 
 
   
