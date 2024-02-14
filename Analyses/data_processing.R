@@ -716,9 +716,113 @@ BALANG_growth <- BALANG_renamed %>%
   select(month, year, id, height, surv,value)
     
 
+  
+  # Beth also has data from some plants that were naturally occurring. Need to incorporate this data
+  
+  
+  ####################################################################################
+  ###### Cleaning and merging together CHAFAS #######################################
+  ####################################################################################
+  # Chamaechrista fasculata data was collected by Beth Stephens, starting in 2009. The data includes seed addition experiments into different microhabitats as well as monitoring of establishment and survival growth and reproduction during two years. she collected data monthly.
+  # There is a set of columns for 9/29 which aren't exactly copied of the following 9/29, so I believe there is something like this is supposed to be a different month, but it's also recorded in a different way, and it's unclear if this is actually good data, so I'm just going to drop these and use the following columns.
+  # Some of these are like plants that were recorded, but never seem to show up again in later censuses. I might just drop the other set of 9/29 columns too
+  
+  CHAFAS_colnames <- c("habitat", "site", 	"microsite",	"point","density",	"primary_shrub",	"secondary_shrub", "tag", 
+                       "new Cf seedlings;5/26/09",
+                       "estab Cf seedlings;6/5/09",	"new Cf seedlings;6/5/09", 
+                       "estab Cf seedlings;6/10/09",	"new Cf seedlings;6/10/09", 
+                       "estab Cf seedlings;6/18/09", "new Cf seedlings;6/18/09", 
+                       "estab Cf seedlings;6/24/09",	"new Cf seedlings;6/24/09",
+                       "estab Cf seedlings;7/23/09","new Cf seedlings;7/23/09", 
+                       "estab Cf seedlings;8/18/09",	"new Cf seedlings;8/18/09", 
+                       "estab Cf seedlings;9/21/09","new Cf seedlings;9/21/09", 
+                       "estab Cf seedlings;10/29/09","new Cf seedlings;10/29/09", 
+                       "estab Cf seedlings;11/23/09",	"new Cf seedlings;11/23/09", 
+                       "estab Cf seedlings;12/16/09",	"new Cf seedlings;12/16/09",
+                       "estab Cf seedlings;1/20/10",	"new Cf seedlings;1/20/10", 
+                       "estab Cf seedlings;2/17/10","new Cf seedlings;2/17/10", 
+                       "estab Cf seedlings;3/24/10","new Cf seedlings;3/24/10", 
+                       "estab Cf seedlings;4/27/10",	"new Cf seedlings;4/27/10", 
+                       "estab Cf seedlings;5/31/10",	"new Cf seedlings;5/31/10", 
+                       "estab Cf seedlings;6/30/10",	"new Cf seedlings;6/30/10", 
+                       "estab Cf seedlings;7/30/10",	"new Cf seedlings;7/30/10", 
+                       "estab Cf seedlings;8/30/10",	"new Cf seedlings;8/30/10", 
+                       "estab Cf seedlings;9/29/10",	"new Cf seedlings;9/29/10", 
+                       "estab Cf seedlings;10/27/10",	"new Cf seedlings;10/27/10", 
+                       "estab Cf seedlings;11/24/10",	"new Cf seedlings;11/24/10", 
+                       "estab Cf seedlings;12/?/2010","new Cf seedlings;12/?/2010", 
+                       "estab Cf seedlings;1/26/11",	"new Cf seedlings;1/26/11", 
+                       "estab Cf sdlings;2/16/2011","new Cf sdlings;2/16/2011",   
+                       "estab Cf sdlings;3/23/2011","new Cf sdlings;3/23/2011",   
+                       "estab Cf sdlings;4/19/11","new Cf sdlings;4/19/11",   
+                       "estab Cf sdlings;5/18/11","new Cf sdlings;5/18/11",	 
+                       "estab Cf sdlings;6/16/11","new Cf sdlings;6/16/11",   
+                       "estab Cf seedling;7/27/11",	"new Cf seedlings;7/27/11", 
+                       "estab Cf seedling;8/23/11","new Cf seedlings;8/23/11", 
+                       "estab Cf seedling;9/23/11",	"new Cf seedlings;9/23/11", 
+                       "estab Cf seedling;10/26/11",	"new Cf seedlings;10/26/11", 
+                       "estab Cf seedling;11/30/11",	"new Cf seedlings;11/30/11", 
+                       "estab Cf seedlings;12/?/2011","new Cf seedlings;12/?/2011", 
+                       "estab Cf seedlings;1/?/2012","new Cf seedlings;1/?/2012", 
+                       "estab Cf seedlings;2/?/2012","new Cf seedlings;2/?/2012", 
+                       "estab Cf seedlings;03/-/2012","new Cf seedlings;03/-/2012", 
+                       "estab Cf seedlings;04/-/2012","new Cf seedlings;04/-/2012", 
+                       "estab Cf seedlings;05/-/2012","new Cf seedlings;05/-/2012", 
+                       "sum", 
+                       paste0("height_", 1:7,"_dupe",";", "9/29/10"), # There is a set of columns for 9/29 which aren't exactly copied of the following 9/29, so I believe there is something like this is supposed to be a different month, but it's also recorded in a different way, and it's unclear if this is actually good data, so I'm just going to drop these and use the following columns.
+                       paste0("height_", 1:3,";", "9/29/10"),
+                       paste0("height_", 1:4,";", "10/27/10"),
+                       paste0("height_", 1:4,";", "11/24/10"),
+                       paste0("height_", 1,";", "12/?/2010"),# seems like not all the plants were measured in this census
+                       paste0("height_", 1:4,";", "1/26/11"), 
+                       paste0("height_", 1:2,";", "2/16/11"), 
+                       paste0("height_", 1:5,";", "3/-/2011"),
+                       paste0("height_", 1:6,";", "4/-/2011"),
+                       paste0("height_", 1:3,";", "5/-/2011"),
+                       paste0("height_", 1:4,";", "6/16/11"),
+                       paste0("height_", 1:3,";", "7/01/11"),
+                       paste0("height_", 1:3,";", "8/01/11"),
+                       paste0("height_", 1:3,";", "09/01/2011"),
+                       paste0("height_", 1,";", "10/-/2011"),
+                       paste0("height_", 1:5,";", "11/-/2011"),
+                       paste0("height_", 1:3,";", "12/-/2011"),
+                       paste0("height_", 1:3,";", "01/-/2012"),
+                       paste0("height_", 1:3,";", "02/-/2012"),
+                       paste0("height_", 1:3,";", "03/-/2012"),
+                       paste0("height_", 1:3,";", "04/-/2012"),
+                       paste0("height_", 1:3,";", "05/-/2012"))
+  
+  CHAFAS_renamed <- CHAFAS_raw
+  
+  colnames(CHAFAS_renamed) <- CHAFAS_colnames
+  
+  
 
-
-
+  
+  # Dropping the secondary column names within the spreadsheet
+  # then pivoting the germination counts to have them in a single column. The germination counts start in May 2009 and the first size measurements occur in September 2010
+  # Each subplot has a unique tag, with multiple plants inside of it.
+  # The columns for height measurements for 9/29/10 seem to be copy-pasted error. There are also some censuses where there is no data, even though there are multiple measured plants on the censuses on either side.
+  # Currently have the germinants as individual rows, but realizing that it is probably best just to keep the germination data separate because I don't trust that the row order actually tracks the individual plants. It's impossible to tell which of the germinants survived/died before the height measurements start to be recorded.
+  
+  CHAFAS_seedlings <- CHAFAS_renamed %>% 
+    filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% 
+    select(-sum,-contains("dupe"), -primary_shrub, -secondary_shrub, -density, -contains("height")) %>% 
+    mutate(across(everything(), as.character)) %>% 
+    pivot_longer(cols = -c(quote_bare(habitat, site, microsite, point, tag)), names_to = c("name","date"), names_pattern = "(.*)(?:[;])(.*)", values_to = "measurement") %>% 
+    mutate(name = case_when(name == "new Cf seedlings" | name == "new Cf sdlings" ~ "new_sdlg_count",
+                            name == "estab Cf seedlings" | name == "estab Cf sdlings" | name == "estab Cf seedling" ~ "estab_sdlg_count", TRUE ~ name)) %>% 
+    mutate(month = lubridate::month(lubridate::mdy(date)),
+           year = lubridate::year(lubridate::mdy(date))) %>% 
+    pivot_wider(id_cols = c(quote_bare(habitat, site, microsite, point, tag, date, month, year)), names_from = name, values_from = measurement)  %>% 
+    mutate(estab_sdlg_count = as.numeric(str_remove(estab_sdlg_count, "[?*]")),
+           new_sdlg_count = as.numeric(str_remove(new_sdlg_count, "[?*]"))) %>% 
+    group_by(tag, date) %>% 
+    filter(!is.na(new_sdlg_count) & !is.na(estab_sdlg_count)) %>% 
+    mutate(indiv_sdlg_list = case_when(!is.na(estab_sdlg_count) & estab_sdlg_count > 0 ~ paste(1:estab_sdlg_count, collapse = ";"),
+                                       TRUE ~ NA),
+           indiv_sdlg_birth = case_when(!is.na(new_sdlg_count) & new_sdlg_count > 0 ~ paste(1:new_sdlg_count, collapse = ";"))) %>% 
+    ungroup()
 
 
   
