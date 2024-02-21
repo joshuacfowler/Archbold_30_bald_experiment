@@ -52,10 +52,10 @@ LIAOHL_raw <- read_csv(file = paste0(filepath, "/UM demographic models/LoDem_201
 BALANG_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/BaCf_data6-2-12.xls"), sheet = "Badata_may2012")
 
 # data from 2008 height and flowering census of naturally occurring plants
-BALANG_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/Baseedprod08_2-24-09summarystats.xls"), sheet = "cleaned")
+BALANG_raw_2008 <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/Baseedprod08_2-24-09summarystats.xls"), sheet = "cleaned")
 
 # data from 2009 census of seedheads of naturally occurring plants
-BALANG_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/Ba_prod_foranalysis5-4-10.xlsx"), sheet = "data")
+BALANG_raw_2009 <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/Ba_prod_foranalysis5-4-10.xlsx"), sheet = "data")
 
 
 # Reading in data for Chamaecrista fasciculate (CHAFAS)
@@ -824,6 +824,53 @@ BALANG_growth <- BALANG_renamed %>%
            indiv_sdlg_birth = case_when(!is.na(new_sdlg_count) & new_sdlg_count > 0 ~ paste(1:new_sdlg_count, collapse = ";"))) %>% 
     ungroup()
 
+  
+  
+  # the growth data for individual plants is messy, but it is at least tracking clear individuals, so we will keep the two datasets separate. 
+  #we want each transition year for each plant to be an individual row, so I am pivoting longer to get individual plants then separating to split up the height measurements . 
+  # Then I will split out the string in the height column to keep track of flowering, etc.
+  # Using stringr to pull out the height number which is always first, then extracting the number before the strings "br" and "bu" and "fl" for "branches" and "buds" and "flowers" respectively.
+  # Sent and Email to Beth Stephens to figure out what NB means. She says it is likely "No bolt". Still not 100% clear if that means the plant was too small to measure (like it was just a rosette) or if it wasn't found. There are several places throughout the data where a plant is recorded in one month, then maybe goes missing in the next month, and then re-appears. It's difficult to tell when these are the same plant or just a seedling that popped up then died, then a new plant appeared. Also related to this. Plants are mostly consistently recorded in the same column each census, but there are definitely a few instances where this isn't true.
+  # Overall, I think I will just need to filter this down until we have only the plants we are confident in.
+  toothpick_match <- c('WS', "BD", "BH", "RH", "WBC", "BWC", "GS", 
+                       "gc", "GC", "OC", "OS", "RN", "YC", "YS",  
+                       "YN", "YD", "WC", "NT", "no TP", 
+                       "YH", "Ynub", "Wnub","tp?", "White")
+  toothpick_pattern <- paste0("\\b", paste(toothpick_match , collapse="\\b|\\b"), "\\b")
+  
+  
+CHAFAS_growth <- CHAFAS_renamed %>% 
+    filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% 
+    select(-sum,-contains("dupe"), -primary_shrub, -secondary_shrub, -contains("Cf sdlings"), -contains("Cf seedling")) %>% 
+    mutate(across(everything(), as.character)) %>% 
+    pivot_longer(cols = starts_with("height"), names_sep = ";", names_to = c("height_column", "date")) %>% 
+    mutate(id = paste0(tag, "_", parse_number(height_column))) %>% 
+    mutate(origin = "seed_addition") %>% 
+    mutate(height = case_when(grepl("no ht recorded", value)~ NA,
+                              grepl("check to see which YD died previously (aug 2010, jan 2011)", value) ~ NA,
+                              TRUE ~ parse_number(value))) %>% 
+    mutate(branches = as.numeric(str_extract(value, "\\d+(?=\\sbr)|\\d+(?=\\?\\sBr)|\\d+(?=br)")),
+           top_branches = as.numeric(str_extract(value, "\\d+(?=\\st\\sbr)|\\d+(?=\\stop\\sbr)")),
+           mid_branches = as.numeric(str_extract(value, "\\d+(?=\\sm\\sbr)|\\d+(?=\\smid\\sbr)")),
+           bottom_branches = as.numeric(str_extract(value, "\\d+(?=\\sb\\sbr)|\\d+(?=\\sbot\\sbr)|\\d+(?=\\sbottom\\sbr)|\\d+(?=\\smain\\sbr)"))) %>% 
+    mutate_at(vars(branches, top_branches, mid_branches, bottom_branches), ~replace_na(.,  0)) %>% 
+    mutate(branch_count = branches+top_branches+mid_branches+bottom_branches) %>% 
+    mutate(buds = as.numeric(str_extract(value, "\\d+(?=\\sbu)")),
+           flowers = as.numeric(str_extract(value, "\\d+(?=\\sfl)"))) %>% 
+    mutate(date_temp = case_when(grepl( "/-/", date) ~ sub("\\-", "1", date),
+                                 grepl("/?/", date) ~ sub("\\?", "1", date),
+                                 TRUE ~ date),
+           date_fixed = case_when(!grepl("/20", date_temp) ~ as_date(date_temp, format = "%m/%d/%y"),
+                                  grepl("/20", date_temp) ~ as_date(date_temp, format = "%m/%d/%Y")),
+           month = lubridate::month(date_fixed),
+           year = lubridate::year(date_fixed)) %>% 
+    arrange(id, year, month) %>% 
+    mutate(surv = case_when(!is.na(height) ~ "alive",
+                            !is.na(dplyr::lag(height, n = 1)) & is.na(dplyr::lead(height, n = 1)) & is.na(dplyr::lead(height, n = 2)) & is.na(height) ~ "inferred dead",
+                            TRUE ~ "not recorded")) %>% 
+    mutate(toothpick_id = str_extract(value, pattern = regex(toothpick_pattern, ignore_case = TRUE)))
+  select(month, year, id, height, surv,value)
+  
 
   
   
