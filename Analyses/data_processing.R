@@ -62,6 +62,13 @@ BALANG_raw_2009 <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAF
 CHAFAS_raw <- read_excel(path = paste0(filepath, "/BethStephens_BALANG_CHAFAS/BaCf_data6-2-12.xls"), sheet = "Cfdata_may2012")
 
 
+# Reading in the data for Chapmannia floridana (CHAFLO), data from Jenny Schafer
+# There are census plots and seedling plots
+CHAFLO_raw <- read_excel(path = paste0(filepath, "/JennySchafer_CHAFLO/Chaflo Demography for Josh.xlsx"), sheet = "Demo2015-2021")
+
+CHAFLO_seedling_raw <- read_excel(path = paste0(filepath, "/JennySchafer_CHAFLO/Chaflo Seedling Survival for Josh(1).xlsx"), sheet = "Data")
+
+
 
 ####################################################################################
 ###### Cleaning and merging together ERYCUN ########################################
@@ -871,6 +878,81 @@ CHAFAS_growth <- CHAFAS_renamed %>%
     mutate(toothpick_id = str_extract(value, pattern = regex(toothpick_pattern, ignore_case = TRUE)))
   select(month, year, id, height, surv,value)
   
+
+  
+  
+  ####################################################################################
+  ###### Cleaning and merging together CHAFLO #######################################
+  ####################################################################################
+
+  # This data was collected by Jenny Schafer. Overall, the dataset/column names are pretty clear. One thing to note is that some plots were censused for different durations so the "survival" column reflects NA's in some cases where plants were not included in ensuing censuses
+  # First I'm going to standardize the column names, then pivot longer and do a bit of clean up to clarify the survival measurements and to add NA values for the missing 2020 census
+  # the first census is in June 2015, and then there is a followup census in Dec 2015. A few new plants were added during this census, But they are mostly accounted for in the 2016 census.
+  
+  column_string <- c("ARCHBOLD_surv", "stem_count", "max_height", "stem_heights", "dead_stems", "flw_status", "herb", "notes")
+  CHAFLO_colnames <- c("Pop_id", "Plot_id", 	"Burn_Unit",	"Habitat","YSF",	"Plant_id",
+
+                       paste0(column_string , "-June2021"),
+                       paste0(column_string , "-July2019"),
+                       paste0(column_string , "-May/June2018"),
+                       paste0(column_string , "-June2017"),
+                       paste0(column_string , "-June2016"),
+                       paste0(column_string , "-Dec2015"),
+                       paste0(c("ARCHBOLD_surv", "stem_count", "max_height", "stem_heights", "dead_stems", "flw_status", "flw_before", "notes"), "-June2015"))
+  
+  CHAFLO_renamed <- CHAFLO_raw
+  
+  colnames(CHAFLO_renamed) <- CHAFLO_colnames
+
+  
+# Max number of stems measured
+  max_stem <- 8
+  
+CHAFLO_census <- CHAFLO_renamed %>% 
+  dplyr::filter(Pop_id != "Pop. #") %>% 
+  dplyr::select(!"YSF") %>% 
+  mutate(across(everything(), as.character)) %>% 
+  pivot_longer(cols = -c(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id), names_sep = "-", names_to = c("column_name", "verbatim_date")) %>% 
+  mutate(tag_id = paste(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id, sep = "-"),
+         month = case_when(grepl( "June", verbatim_date) ~ 6,
+                           grepl( "July", verbatim_date) ~ 7,
+                           grepl( "Dec", verbatim_date) ~ 12,
+                           TRUE ~ NA),
+         year = parse_number(verbatim_date)) %>% 
+  pivot_wider(names_from = column_name, values_from = value) %>% 
+  separate(stem_heights, into = paste("stem_height", 1:max_stem), fill = "right") %>% 
+  mutate(across(ARCHBOLD_surv:dead_stems, as.numeric)) %>% 
+  mutate(surv = case_when(ARCHBOLD_surv == 1 ~ 1, 
+                          ARCHBOLD_surv == 0 ~ 0,
+                          ARCHBOLD_surv == 3 ~ 1,
+                          ARCHBOLD_surv == 5 ~ 1,
+                          ARCHBOLD_surv == 9 ~ NA)) %>% 
+  complete(nesting(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id, tag_id), year = full_seq(year, period = 1), fill= list(NA))
+  
+  
+# Looking at dec and Jun start dates
+chaflo_2015 <- CHAFLO_census %>% 
+  filter( year == 2015)
+
+
+ggplot(data = chaflo_2015) +
+  geom_histogram(aes(x = surv, fill = month, group = month), position = "dodge")
+           
+  
+
+ggplot(data = chaflo_2015) +
+  geom_histogram(aes(x = surv, fill = month, group = month), position = "dodge")
+
+
+chaflo_2015 %>% 
+  dplyr::select(tag_id, max_height, month) %>% 
+  pivot_wider(names_from = month, names_prefix = "max_height", values_from = max_height) %>% 
+ggplot() +
+  geom_jitter(aes(x = max_height6, y = max_height12), position = "dodge") + lims(x = c(0,25), y = c(0,25))
+
+
+  
+  CHAFLO_seedling_raw
 
   
   
