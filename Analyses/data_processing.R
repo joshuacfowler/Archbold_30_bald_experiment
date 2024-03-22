@@ -951,8 +951,65 @@ ggplot() +
   geom_jitter(aes(x = max_height6, y = max_height12), position = "dodge") + lims(x = c(0,25), y = c(0,25))
 
 
-  
-  CHAFLO_seedling_raw
+
+# Now adding in the data from seedling addition experiment plots. These were set up and followed between Aug 2016 and  may 2023
+# Each row records the germination and survival of a single seed. The columns are called Germ/Surv. They are what I typically call survival: "is the individual present and alive during the census?" and you can figure out the first germination the first time they show up as alive.
+# There is a set of columns labeled with duplicate date (9/8/16). I assume this was actually a second set of measurements in the same month but a couple weeks later, which is the case for the rest of the data, so I am labeling 9/18/16. The 2023 census also only recorded month, so making this the middle of the month
+# We also have to fix the survival a little bit because it records stuff as dead for subsequent censuses
+
+CHAFLO_seedling_colnames <- c("Habitat", "Burn_Unit", 	"Treatment",	"PVC_number",
+                              "ARCHBOLD_surv;8/5/16",
+                              "ARCHBOLD_surv;8/15/16",
+                              "ARCHBOLD_surv;8/25/16","height;8/25/16",
+                              "ARCHBOLD_surv;9/8/16","height;9/8/16",
+                              "ARCHBOLD_surv;9/18/16","height;9/18/16",
+                              "ARCHBOLD_surv;10/5/16","height;10/5/16","notes;10/5/16",
+                              "ARCHBOLD_surv;10/20/16","height;10/20/16","notes;10/20/16",
+                              "ARCHBOLD_surv;11/8/16","height;11/8/16","notes;11/8/16",
+                              "ARCHBOLD_surv;11/30/16","height;11/30/16","notes;11/30/16",
+                              "ARCHBOLD_surv;12/19/16","height;12/19/16","notes;12/19/16",
+                              "ARCHBOLD_surv;1/21/17","height;1/21/17","notes;1/21/17",
+                              "ARCHBOLD_surv;2/27/17","height;2/27/17",
+                              "ARCHBOLD_surv;3/31/17","height;3/31/17",
+                              "ARCHBOLD_surv;5/1/17","height;5/1/17","notes;5/1/17",
+                              "ARCHBOLD_surv;6/3/17","height;6/3/17","notes;6/3/17",
+                              "ARCHBOLD_surv;7/26/17","height;7/26/17","notes;7/26/17",
+                              "ARCHBOLD_surv;9/30/17","height;9/30/17","notes;9/30/17",
+                              "ARCHBOLD_surv;11/10/17","height;11/10/17","notes;11/10/17",
+                              "ARCHBOLD_surv;12/14/17","height;12/14/17","notes;12/14/17",
+                              "ARCHBOLD_surv;3/30/18","height;3/30/18","notes;3/30/18",
+                              "ARCHBOLD_surv;6/12/18","height;6/12/18","notes;6/12/18",
+                              "ARCHBOLD_surv;7/17/19","height;7/17/19","notes;7/17/19",
+                              "ARCHBOLD_surv;6/14/21","height;6/14/21","notes;6/14/21",
+                              "ARCHBOLD_surv;6/29/22","stem_count;6/29/22","height;6/29/22","notes;6/29/22",
+                              "ARCHBOLD_surv;5/15/23","stem_count;5/15/23","height;5/15/23","notes;5/15/23")
+
+CHAFLO_seedling_renamed <- CHAFLO_seedling_raw
+
+colnames(CHAFLO_seedling_renamed) <- CHAFLO_seedling_colnames
+
+
+CHAFLO_seedling_census <- CHAFLO_seedling_renamed %>% 
+  dplyr::filter(Habitat != "Habitat") %>% 
+  mutate(across(everything(), as.character)) %>% 
+  pivot_longer(cols = -c(Habitat, Burn_Unit, Treatment, PVC_number), names_sep = ";", names_to = c("column_name", "date")) %>% 
+  mutate(year = year(mdy(date)),
+         month = month(mdy(date)),
+         day = day(mdy(date))) %>% 
+  pivot_wider(names_from = column_name, values_from = value) %>% 
+  mutate(across(c(ARCHBOLD_surv, height, stem_count), as.numeric)) %>% 
+  arrange(PVC_number,year,month,day) %>% 
+  mutate(surv = case_when(lag(ARCHBOLD_surv, n = 1) == 0 & ARCHBOLD_surv == 0 ~ NA,
+                          lead(ARCHBOLD_surv, n = 1) == 1 & ARCHBOLD_surv == 0 ~ NA,
+                          ARCHBOLD_surv == 9 ~ NA,
+                          ARCHBOLD_surv == 2 ~ NA,
+                          TRUE ~ ARCHBOLD_surv)) 
+
+CHAFLO_test <- CHAFLO_seedling_census %>% 
+  filter(lead(ARCHBOLD_surv, n = 1) &  ARCHBOLD_surv == 0)
 
   
+  
+  
+ARCHBOLD_surv == 1 & lag(ARCHBOLD_surv = 0) ~ NA,
   
