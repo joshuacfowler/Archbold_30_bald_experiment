@@ -6,11 +6,13 @@ library(tidyverse)
 library(readxl)
 library(lubridate)
 library(lme4)
-
+library(brms)
+library(rstan)
 
 
 
 invlogit<-function(x){exp(x)/(1+exp(x))}
+logit<-function(x){log(x)/(1+(x))}
 
 
 ###############################################################################################
@@ -64,7 +66,7 @@ per_pot_size <- size_census %>%
                           is.na(HeightSize_measurement) ~ DiameterSize_measurement,
                           is.na(DiameterSize_measurement) ~ HeightSize_measurement,
                           TRUE ~ NA)) %>% 
-  filter(census_number == 6)  %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
+  filter(census_number == 9)  %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
   group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
   dplyr::summarize(finalHeight = HeightSize_measurement,
                    finalDiameter = DiameterSize_measurement,
@@ -120,6 +122,105 @@ size.covariates <- per_pot_size %>%
 
 
 
+write_csv(germ.covariates, file = "germ.covariates.csv")
+
+write_csv(size.covariates, file = "size.covariates.csv")
+
+################################################################################
+######### Setting up MCMC parameters ###########################################
+################################################################################
+## run this code to optimize computer system settings for MCMC
+rstan_options(auto_write = FALSE)
+options(mc.cores = parallel::detectCores())
+set.seed(123)
+
+## MCMC settings
+mcmc_pars <- list(
+  warmup = 2500, 
+  iter = 5000, 
+  thin = 1, 
+  chains = 3
+)
+
+
+################################################################################
+######### Regressions of germination rate with environmental covariates ########
+################################################################################
+
+# starting first with a model without environmental covariates
+germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile, data = germ.covariates,
+                            family = binomial(link = "logit"),
+                            prior = c(set_prior("normal(0,1)", class = "b")),
+                            warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+
+
+
+# Making prediction dataframe
+
+prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), live_sterile = unique(germ.covariates$live_sterile), total_seeds = 1)
+
+preds <- fitted(germ.m, newdata = prediction_df)
+prediction_df$fit <- preds[,"Estimate"]
+prediction_df$lwr <- preds[,"Q2.5"]
+prediction_df$upr <- preds[,"Q97.5"]
+
+# now we can plot the model predictions
+
+ggplot(data = prediction_df)+
+  # geom_jitter(data = germ.covariates, aes( x= live_sterile, y = seed_prop), color = "blue", width = .2, alpha = .2)+
+  geom_point(aes(x = live_sterile, y = fit), size = 1) +
+  geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+
+  facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
+
+
+
+
+# now incorporating the environmental covariates and a random effect
+germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile*rel_elev*fire_frequency + (1|soil_source), data = germ.covariates,
+              family = binomial(link = "logit"),
+              prior = c(set_prior("normal(0,1)", class = "b")),
+              warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+
+
+
+# Making prediction dataframe
+prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), rel_elev = seq(from = min(data$rel_elev), to = max(data$rel_elev), by = .2), fire_frequency = c(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency)))
+
+
+preds <- fitted(germ.m, newdata = prediction_df)
+prediction_df$fit <- preds[,"Estimate"]
+prediction_df$lwr <- preds[,"Q2.5"]
+prediction_df$upr <- preds[,"Q97.5"]
+
+
+# now we can plot the model predictions
+germ.binned <- germ.covariates %>% 
+  mutate(fire_frequency_obs = fire_frequency,
+         fire_frequency = case_when(fire_frequency_obs>3.5 ~ 7,
+                              fire_frequency_obs<=3.5 ~ 0),
+         elev_bin = cut_number(rel_elev, 10)) %>% 
+  group_by(spp_code, elev_bin, fire_frequency, live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_germ = mean(seed_prop, na.rm = T))
+
+
+
+ggplot(data = prediction_df)+
+  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = germ.binned, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  # scale_fill_manual(values = c(""))
+  facet_wrap(~spp_code+fire_frequency, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
+
+
+
+
+
+
+
+
+
+
 # this is how to fit a generalized linear model, this is more "correct" for our data. 
 # The -1 in the formula indicates that I want to use the spp name as the first intercept, also worth noting that the first "live_sterile" parameter listed in the summary is for BALANG
 germ.m <- glm(cbind(TotalGerm, total_seeds - TotalGerm) ~ -1 + spp_code* live_sterile, data = germ.covariates, family = binomial)
@@ -143,7 +244,7 @@ prediction_df$fit <- germ.m$family$linkinv(preds$fit)
 # now we can plot the model predictions
 
 ggplot(data = prediction_df)+
-  geom_jitter(data = germ.covariates, aes( x= live_sterile, y = seed_prop), color = "blue", width = .2, alpha = .2)+
+  # geom_jitter(data = germ.covariates, aes( x= live_sterile, y = seed_prop), color = "blue", width = .2, alpha = .2)+
   geom_point(aes(x = live_sterile, y = fit), size = 1) +
   geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+
   facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
@@ -227,7 +328,7 @@ prediction_df$fit <- invlogit(preds$fit)
 # now we can plot the model predictions
 
 ggplot(data = prediction_df)+
-  # geom_point(data = germ.covariates, aes( x= rel_elev, y = seed_prop, color = live_sterile), alpha = .2)+
+  geom_point(data = germ.covariates, aes( x= rel_elev, y = seed_prop, color = live_sterile), alpha = .2)+
   geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
   geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
   # scale_fill_manual(values = c(""))
@@ -313,7 +414,9 @@ data <- data %>% filter(!is.na(time_since_fire)) # dropping one bald which was n
 ############ Now fitting the models for size ###########  
 ########################################################################################
   #dropping bald 97, which we mostly pulled due to contamination
-  data <- size.covariates %>% filter(soil_source != 97)
+  data <- size.covariates %>% filter(soil_source != 97)  %>% 
+    mutate(finalSize = case_when(spp_code == "ERYCUN" ~ finalDiameter,
+                            TRUE~ finalSize))
   
   
   size.m <- glm(log(finalSize)~ -1 + spp_code* live_sterile ,family = "gaussian", data = data)
@@ -332,7 +435,7 @@ data <- data %>% filter(!is.na(time_since_fire)) # dropping one bald which was n
   
   
   ggplot(data = prediction_df)+
-    geom_jitter(data = size.covariates, aes( x= live_sterile, y = log(finalSize)), color = "blue", width = .2, alpha = .2)+
+    geom_jitter(data = data, aes( x= live_sterile, y = log(finalSize)), color = "blue", width = .2, alpha = .2)+
     geom_point(aes(x = live_sterile, y = fit)) +
     geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+
     facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
@@ -359,7 +462,7 @@ data <- data %>% filter(!is.na(time_since_fire)) # dropping one bald which was n
   # now we can plot the model predictions
   
   ggplot(data = prediction_df)+
-    geom_point(data = size.covariates, aes( x= rel_elev, y = log(finalSize), color = live_sterile), alpha = .2)+
+    geom_point(data = data, aes( x= rel_elev, y = log(finalSize), color = live_sterile), alpha = .2)+
     geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
     geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
     # scale_fill_manual(values = c(""))
@@ -391,7 +494,7 @@ data <- data %>% filter(!is.na(time_since_fire)) # dropping one bald which was n
   # now we can plot the model predictions
   
   ggplot(data = prediction_df)+
-    geom_point(data = size.covariates, aes( x= fire_frequency, y = log(finalSize), color = live_sterile), alpha = .2)+
+    geom_point(data = data, aes( x= fire_frequency, y = log(finalSize), color = live_sterile), alpha = .2)+
     geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
     geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
     # scale_fill_manual(values = c(""))
