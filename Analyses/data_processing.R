@@ -6,10 +6,10 @@
 
 ##### Set up #####
 
-library(renv) # track package versions
-# renv::init()
-# renv::snapshot()
-renv::restore()
+# library(renv) # track package versions
+# # renv::init()
+# # renv::snapshot()
+# renv::restore()
 
 
 library(tidyverse)
@@ -68,6 +68,12 @@ CHAFLO_raw <- read_excel(path = paste0(filepath, "/JennySchafer_CHAFLO/Chaflo De
 
 CHAFLO_seedling_raw <- read_excel(path = paste0(filepath, "/JennySchafer_CHAFLO/Chaflo Seedling Survival for Josh(1).xlsx"), sheet = "Data")
 
+
+
+
+# Reading in the data for Paronychia chartacea from Jenny Schafer
+
+PARCHA_raw <- read_excel(path = paste0(filepath, "/JennySchafer_PARCHA_ProbablySameAsArchboldsVersion/Paronychia Demography Data.xlsx"))
 
 
 ####################################################################################
@@ -940,10 +946,6 @@ ggplot(data = chaflo_2015) +
            
   
 
-ggplot(data = chaflo_2015) +
-  geom_histogram(aes(x = surv, fill = month, group = month), position = "dodge")
-
-
 chaflo_2015 %>% 
   dplyr::select(tag_id, max_height, month) %>% 
   pivot_wider(names_from = month, names_prefix = "max_height", values_from = max_height) %>% 
@@ -1011,5 +1013,180 @@ CHAFLO_test <- CHAFLO_seedling_census %>%
   
   
   
-ARCHBOLD_surv == 1 & lag(ARCHBOLD_surv = 0) ~ NA,
+# ARCHBOLD_surv == 1 & lag(ARCHBOLD_surv = 0) ~ NA,
   
+
+####################################################################################
+###### Cleaning and merging together PARCHA #######################################
+####################################################################################
+# column_string <- c("ARCHBOLD_surv","resprout", "survival", "stem_count", "max_height", "stem_heights", "dead_stems", "flw_status", "herb", "notes")
+PARCHA_colnames <- c("bald", "fire", 	"gap",	"site","plot",	"tag",
+                     "ARCHBOLD_surv;Mar2010", "resprout;Mar2010",
+                     "ARCHBOLD_surv;Dec2009",
+                     "ARCHBOLD_surv;July2009", "flowering;July2009",
+                     "ARCHBOLD_surv;Oct2009", 
+                     "ARCHBOLD_surv;Sep2008", "flowering;Sep2008",
+                     "ARCHBOLD_surv;May2008", 
+                     "ARCHBOLD_surv;Feb2008", 
+                     "ARCHBOLD_surv;Nov2007", "flowering;Nov2007",
+                     "ARCHBOLD_surv;Aug2007", "flowering;Aug2007",
+                     "ARCHBOLD_surv;May2007",
+                     "ARCHBOLD_surv;Feb2007",
+                     "ARCHBOLD_surv;Nov2006", "flowering;Nov2006", "resprout;Nov2006",
+                     "ARCHBOLD_surv;Aug2006", "flowering;Aug2006",
+                     "ARCHBOLD_surv;May2006", "resprout;May2006",
+                     "ARCHBOLD_surv;Feb2006", 
+                     "ARCHBOLD_surv;Nov2005", "flowering;Nov2005", 
+                     "ARCHBOLD_surv;Aug2005", "flowering;Aug2005", 
+                     "ARCHBOLD_surv;May2005", "resprout;May2005", 
+                     "ARCHBOLD_surv;Feb2005", "resprout;Feb2005",
+                     "ARCHBOLD_surv;Nov2004", "flowering;Nov2004", 
+                     "ARCHBOLD_surv;Aug2004", "flowering;Aug2004",
+                     "ARCHBOLD_surv;May2004", 
+                     "ARCHBOLD_surv;Feb2004", 
+                     "ARCHBOLD_surv;Nov2003", "flowering;Nov2003",
+                     "length;Nov2003", "width;Nov2003", "height;Nov2003", 
+                     "ARCHBOLD_surv;Aug2003", "flowering;Aug2003",
+                     "ARCHBOLD_surv;May2003",
+                     "ARCHBOLD_surv;Feb2003",
+                     "resprout",	"nseed503",	"nadlt503",	"nseed803",	"nadlt803",	"nsed1103",	"nadt1103",	"nseed204",	"nadlt204",	"nseed504",	"nadlt504",	"nseed804",	"nadlt804",	"nsed1104",	"nadt1104", "nseed205",	"nadlt205",	"nseed505",	"nadlt505",	"nseed805",	"nadlt805",	"nsed1105"	,"nadt1105",	"nseed206",	"nadlt206")
+
+PARCHA_renamed <- PARCHA_raw
+
+colnames(PARCHA_renamed) <- PARCHA_colnames
+
+PARCHA_dates <- PARCHA_renamed %>% 
+  dplyr::select(!starts_with("n"), -resprout) %>% 
+  mutate(row_id = row_number()) %>% 
+  rename(fire_unit = fire) %>% 
+  mutate(plant_id = paste(bald,site, fire_unit, gap, tag, plot, row_id, sep = "_")) %>% 
+  mutate(across(everything(), as.character) ) %>% 
+  pivot_longer(cols = !c(plant_id, bald,site, fire_unit, gap, tag, plot, row_id), names_to = c("measurement", "census_year"), names_sep = "(?<=[A-Za-z])(?=[0-9])")  %>% 
+  mutate(census_month = case_when( grepl( "Feb", measurement) ~ 2,
+                           grepl( "Mar", measurement) ~ 3,
+                           grepl( "May", measurement) ~ 5,
+                           grepl( "July", measurement) ~ 7,
+                           grepl( "Aug", measurement) ~ 8,
+                           grepl( "Sep", measurement) ~ 9,
+                           grepl( "Oct", measurement) ~ 10,
+                           grepl( "Nov", measurement) ~ 11,
+                           grepl( "Dec", measurement) ~ 12),
+         measurement = str_split(measurement, ";", simplify = T)[, 1]) %>% 
+  pivot_wider(names_from = measurement, values_from = value) %>% 
+  mutate(surv = case_when(ARCHBOLD_surv == 1 ~ 1, 
+                          ARCHBOLD_surv == 0 ~ 0,
+                          ARCHBOLD_surv == 3 ~ 1,
+                          ARCHBOLD_surv == 5 ~ 1,
+                          ARCHBOLD_surv == 9 ~ NA,
+                          ARCHBOLD_surv == 2 ~ NA)) %>% 
+  group_by(plant_id) %>% 
+  mutate(birth_year = case_when(ARCHBOLD_surv == 5 ~ as.numeric(census_year)),
+         birth_month = case_when(ARCHBOLD_surv == 5 ~ as.numeric(census_month))) %>% 
+  fill(birth_year, .direction = "updown") %>% 
+  fill(birth_month, .direction = "updown") %>% 
+  mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
+         census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
+         age = as.period(interval(birth_date, census_date))) 
+
+
+PARCHA <- PARCHA_dates %>% 
+  filter(age>=0|is.na(age))
+
+PARCHA_noAge <- PARCHA %>% 
+  filter(is.na(age))
+
+PARCHA$age <- as.period(interval(PARCHA$birth_date, PARCHA$census_date))
+
+  
+  mutate(age = as.numeric(census_year) - as.numeric(birth_year))
+
+####################################################################################
+###### Processing the soil nutrient analysis data ##################################
+####################################################################################
+nutrients_raw <- read_csv(file = "/Users/joshuacfowler/Dropbox/UofMiami/Citrus Sampling Logistics/IFAS soil nutrient data/R8090.csv", skip = 14, skip_empty_rows = TRUE) %>% 
+    rename(ID = `ID#`, Lab_Number = `Lab Number`)
+  
+nutrients_id_key <- read_xlsx(path = "/Users/joshuacfowler/Dropbox/UofMiami/Citrus Sampling Logistics/soil_analysis_id.xlsx", sheet = "soil nutrient analysis id") %>% 
+  mutate(bald = case_when(project == "2024 rosemary bald sampling" ~ str_remove(Bald_id, ".+ ")),
+         maehr_site = case_when(project == "citrus sampling" ~ str_remove(Bald_id, ".+ ")))
+
+
+nutrients <- nutrients_raw %>% 
+  filter(if_any(everything(), ~ !is.na(.))) %>% 
+  filter(ID %in% 1:154) %>% 
+  select(-...14, -...15) %>% 
+  mutate(across(ID:pH, ~as.numeric(.))) %>% 
+  left_join(nutrients_id_key, by = c("ID" = "Soil_analysis_number"))
+
+ggplot(data = nutrients)+
+  geom_histogram(aes(x = pH, fill = project))
+
+ggplot(data = nutrients)+
+  geom_histogram(aes(x = OrgMat, fill = project))
+
+ggplot(data = nutrients)+
+  geom_histogram(aes(x = Fe, fill = project))
+
+####################################################################################
+###### Merging the datasets with the environmental covariates ######################
+####################################################################################
+ARCHBOLD_fire_to2022 <- read_xlsx(path = "~/Dropbox/UofMiami/Balds2009_FireIntensityArea_Through2022.xlsx", sheet = "Balds2009_FireIntensityArea", guess_max = 1048576)# guess_max makes the function look deeper in the columns to assign type
+
+fire_summary <- ARCHBOLD_fire_to2022 %>% 
+  group_by(Bald_U, Bald_) %>% 
+  filter(INTENSITY != 0) %>% 
+  summarize(last_fire = max(as.numeric(Year), na.rm = TRUE),
+            time_since_fire = 2023-max(as.numeric(Year), na.rm = TRUE),
+            fire_list = toString(unique(as.numeric(Year))),
+            fire_frequency = length(unique(as.numeric(Year)))) %>% 
+  ungroup() %>% 
+  add_row(Bald_U = "1S", Bald_ = 1, last_fire = NA, time_since_fire = NA, fire_list = NA, fire_frequency = 0) %>% 
+  mutate(bald = case_when(as.character(Bald_) %in% c("1", "45","95") ~ as.character(Bald_),
+                          TRUE ~ as.character(Bald_U)))
+
+# Now getting the relative elevation from the old fire history file
+
+elev.df <- read_xlsx(path = "~/Dropbox/UofMiami/Experiment Set up/firehistory_thru2018.xlsx", sheet = "Rx_Freq", guess_max = 1048576) %>% # guess_max makes the function look deeper in the columns to assign type
+  rename(rel_elev = rel.eve) %>% 
+  dplyr::select(bald, rel_elev) %>% 
+  mutate(
+    bald = case_when(bald == "01S" ~ "1S",
+                     bald == "01N" ~ "1N",
+                     bald == "02" ~ "2",
+                     bald == "05E" ~ "5E",
+                     bald == "07N" ~ "7N",
+                     bald == "35N" ~ "35",
+                     bald == "65E" ~ "65",
+                     TRUE ~ bald))
+
+
+
+
+# Pulling out fire history relative to the observation year for each datapoint
+ERYCUN_covariates <- ERYCUN %>% 
+  left_join(elev.df) %>% 
+  left_join(fire_summary)
+
+
+
+
+last_fire_fx <- function(x,y){ max(as.numeric(x)[as.numeric(x)<=y])}
+fire_frequency_fx <- function(x,y){length(as.numeric(x)[as.numeric(x)<=y])/(y - 1950)}
+
+ERYCUN_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(unlist(ERYCUN_covariates$fire_list), ", "), y= ERYCUN_covariates$year.t1))
+ERYCUN_covariates$time_since_fire_actual <- ERYCUN_covariates$year.t1 - ERYCUN_covariates$last_fire_actual
+ERYCUN_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(ERYCUN_covariates$fire_list), ", "), y= ERYCUN_covariates$year.t1))
+
+
+
+
+ERYCUN_covariates <- ERYCUN_covariates %>% 
+  mutate(fire_frequency_actual = case_when(bald == "1" ~ 0/(year.t1-1950),
+                                           TRUE ~ fire_frequency_actual)) %>% 
+  dplyr::select(-last_fire, -fire_frequency, -time_since_fire)
+
+
+
+
+#########
+
