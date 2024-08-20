@@ -29,13 +29,37 @@ quote_bare <- function( ... ){
 
 invlogit<-function(x){exp(x)/(1+exp(x))}
 logit = function(x) { log(x/(1-x)) }
+
+
 Lkurtosis=function(x) log(kurtosis(x)); 
+
+
+# non-parametric measures of skew and kurtosis
+NPsd = function(x) {
+  u = diff(quantile(x,c(0.25,0.75))/(qnorm(0.75)-qnorm(0.25)))
+  as.numeric(u)
+}	
+
+NPskewness = function(x,p=0.1) {
+  q = quantile(x,c(p,0.5,1-p))
+  u = (q[3]+q[1]-2*q[2])/(q[3]-q[1]);
+  return(as.numeric(u)); 
+  
+}	
+
+NPkurtosis=function(x,p=0.05) {
+  q = quantile(x,c(p,0.25,0.75,1-p))
+  qN = qnorm(c(p,0.25,0.75,1-p))
+  u = (q[4]-q[1])/(q[3]-q[2]);
+  uN = (qN[4]-qN[1])/(qN[3]-qN[2]);
+  return (as.numeric(u/uN-1)) 
+}
 
 
 ####################################################################################
 ###### sourcing in the cleaned vital rate data #####################################
 ####################################################################################
-source("data.processing.R")
+# source("data.processing.R")
 ERYCUN <- ERYCUN_covariates
 
 
@@ -46,7 +70,15 @@ ERYCUN <- ERYCUN_covariates
 ERYCUN_surv.df <- ERYCUN %>% 
   filter(!is.na(surv.t1) & !is.na(ros_diameter.t)) %>% 
   mutate(log_ros_diameter.t = log(ros_diameter.t)) %>% 
-  filter(Site_tag != "royce_ranch" & bald != "200")
+  filter(Site_tag != "royce_ranch" & bald != "200")%>% 
+  filter(year.t >1989)
+
+
+ERYCUN_growth.df <- ERYCUN %>% 
+  filter(!is.na(ros_diameter.t1) & !is.na(ros_diameter.t)) %>% 
+  mutate(log_ros_diameter.t = log(ros_diameter.t)) %>% 
+  filter(Site_tag != "royce_ranch" & bald != "200")%>% 
+  filter(year.t >1989)
 
 
 
@@ -79,7 +111,7 @@ erycun.survival <- brm(surv.t1~ 1 + log_ros_diameter.t + I(log_ros_diameter.t^2)
               prior = c(set_prior("normal(0,1)", class = "b")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
-
+saveRDS(erycun.survival, "erycun.survival.rds")
 
 
 # Making prediction dataframe
@@ -112,14 +144,89 @@ ggplot(data = prediction_df)+
   geom_point(data = ERYCUN_surv.df, aes( x= fire_frequency_actual, y = surv.t1), color = "grey55", alpha = .2)+
   # geom_point(data = erycun.survival.binned, aes( x= mean_size, y = mean_surv, size = samplesize), color = "skyblue3", alpha = .5)+
   geom_ribbon(aes(x = fire_frequency_actual, ymax = upr, ymin = lwr,fill = as.factor(log_ros_diameter.t),  group = log_ros_diameter.t), alpha = .4)+
-  geom_line(aes(x = fire_frequency_actual, y = fit, color = as.factor(log_ros_diameter.t), group = log_ros_diameter.t), size = 1) +
+  geom_line(aes(x = fire_frequency_actual, y = fit, color = as.factor(log_ros_diameter.t), group = log_ros_diameter.t), linewidth = 1) +
   # geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+ 
   labs(y = "Survival (%)") + theme_minimal()
 
 
+####################################################################################
+###### Growth models ###############################################################
+####################################################################################
+ERYCUN_growth.df <- ERYCUN_growth.df %>% 
+  mutate(logsize_t1 = log(ros_diameter.t1),
+         logsize_t = log_ros_diameter.t) 
+
+# started first with a model with gaussian distribution, but did a poor job fitting
+# trying a gamma distribution to account for positive only values and more flexible mean-variance
+# after fitting the gamma, the mean looks much better, but sd and skew are still not ideal. I'm gonna try coding a stan model to model variance as a function of size
 
 
+# trying to model size dependence in variance with non-linear formula option of brms, the gist is fixing prior for a variable to 1, and then you can add additional formulas as part of a non-linear formula
 
+
+erycun.growth <- brm(logsize_t1 ~ 1 + logsize_t + I(logsize_t^2),
+                     data = ERYCUN_growth.df,
+                       family = "gaussian",
+                       prior = c(set_prior("normal(0,5)", class = "b"),
+                                 set_prior("normal(0,5)", class = "Intercept")),
+                                 #set_prior("cauchy(0,5)", class = "sd")),
+                                 #set_prior("inv_gamma(0.4, 0.3)", class = "shape")),
+                       warmup = mcmc_pars$warmup/10, iter = mcmc_pars$iter/10, chains = mcmc_pars$chains)
+
+source('https://raw.githubusercontent.com/twolock/distreg-illustration/main/R/stan_funs.R')
+stanvars <- stanvar(scode = stan_funs, block = "functions")
+
+
+formula <- bf(logsize_t1 ~ 1 + logsize_t ,
+              sigma ~ 1 + logsize_t ,
+              eps ~  1 + logsize_t,
+              delta ~  1 + logsize_t )
+erycun.growth <- brm(formula,
+                     data = ERYCUN_growth.df,
+                     family = sinhasinh,
+                     prior = c(set_prior("normal(0,5)", class = "b"),
+                               set_prior("normal(0,5)", class = "Intercept")),
+                     stanvars = stanvars,
+                     # set_prior("cauchy(0,5)", class = "sd")),
+                     #set_prior("inv_gamma(0.4, 0.3)", class = "shape")),
+                     warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+saveRDS(erycun.growth, "erycun.growth.rds")
+erycun.growth <- readRDS("erycun.growth.rds")
+expose_functions(erycun.growth, vectorize = T, show_compiler_warnings=F)
+
+
+formula <- bf(logsize_t1 ~ 1 + s(logsize_t, bs = "tp") + (1|bald),
+              sigma ~ 1 + s(logsize_t, bs = "tp"),
+              eps ~  1 + s(logsize_t, bs = "tp"),
+              delta ~  1 + s(logsize_t, bs = "tp"))
+erycun.growth <- brm(formula,
+                     data = ERYCUN_growth.df,
+                     family = sinhasinh,
+                     stanvars = stanvars,
+                     prior = c(set_prior("normal(0,5)", class = "b"),
+                               set_prior("normal(0,5)", class = "Intercept")),
+                               # set_prior("cauchy(0,5)", class = "sd")),
+                     #set_prior("inv_gamma(0.4, 0.3)", class = "shape")),
+                     warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+
+
+# Get the model code and data object
+stancode(erycun.growth)
+get_prior(erycun.growth)
+growth_data <- standata(erycun.growth)
+# making a predictor matrix for the variance term that includes only size
+growth_data$X_sigma <- growth_data$X[,1:3]
+growth_data$K_sigma <- ncol(growth_data$X_sigma)
+growth_data$Kc_sigma <- ncol(growth_data$X_sigma)-1
+
+
+erycun.growth <- stan(file = "Analyses/growth_model.stan", 
+                      data = growth_data)
+
+# This is sort of working but I need to figure out the intercepts because I think it is unidentifiable. and probably need to move away from the more streamlined normal_id_glm function
+
+
+print(erycun.growth)
 ####################################################################################
 ###### Posterior predictive checks #################################################
 ####################################################################################
@@ -138,7 +245,7 @@ size_moments_ppc <- function(data,y_name,sim, n_bins, title = NA){
     dplyr::summarize(mean_t1 = mean(y_name),
                      sd_t1 = sd(y_name),
                      skew_t1 = skewness(y_name),
-                     kurt_t1 = Lkurtosis(y_name),
+                     kurt_t1 = kurtosis(y_name),
                      bin_mean = mean(logsize_t),
                      bin_n = n())
   sim_moments <- bind_cols(enframe(data$logsize_t), as_tibble(t(sim))) %>%
@@ -150,7 +257,7 @@ size_moments_ppc <- function(data,y_name,sim, n_bins, title = NA){
     summarize( mean_sim = mean((sim)),
                sd_sim = sd((sim)),
                skew_sim = skewness((sim)),
-               kurt_sim = Lkurtosis((sim)),
+               kurt_sim = kurtosis((sim)),
                bin_mean = mean(logsize_t),
                bin_n = n())
   sim_medians <- sim_moments %>%
@@ -206,3 +313,35 @@ surv_size_ppc <- size_moments_ppc(data = ERYCUN_surv.df,
                                   n_bins = 10, 
                                   title = "Survival")
 surv_size_ppc
+
+
+
+
+
+
+#### growth ppc ####
+
+y_sim <- posterior_predict(erycun.growth, ndraws = 500)
+
+ppc_dens_overlay(y = ERYCUN_growth.df$logsize_t1, yrep = y_sim)
+
+mean_s_plot <-   ppc_stat(ERYCUN_growth.df$logsize_t1, y_sim, stat = "mean")
+sd_s_plot <- ppc_stat(ERYCUN_growth.df$logsize_t1, y_sim, stat = "NPsd")
+skew_s_plot <- ppc_stat(ERYCUN_growth.df$logsize_t1, y_sim, stat = "NPskewness")
+kurt_s_plot <- ppc_stat(ERYCUN_growth.df$logsize_t1, y_sim, stat = "NPkurtosis")
+grow_moments <- mean_s_plot+sd_s_plot+skew_s_plot+kurt_s_plot + plot_annotation(title = "Growth")
+grow_moments
+
+
+
+grow_size_ppc <- size_moments_ppc(data = ERYCUN_growth.df,
+                                  y_name = "logsize_t1",
+                                  sim = y_sim, 
+                                  n_bins = 10, 
+                                  title = "Growth")
+grow_size_ppc
+
+
+
+
+
