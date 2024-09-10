@@ -210,6 +210,8 @@ germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile*rel_el
 # Making prediction dataframe
 prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), rel_elev = c(median(germ.covariates$rel_elev)), fire_frequency = seq(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency), by = .2))
 
+prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), rel_elev = seq(min(germ.covariates$rel_elev), max(germ.covariates$rel_elev), by = .2), fire_frequency = c(median(germ.covariates$fire_frequency)))
+
 
 preds <- fitted(germ.m, newdata = prediction_df, re_formula = NA)
 prediction_df$fit <- preds[,"Estimate"]
@@ -253,6 +255,16 @@ germ_plot
 
 
 ggsave(germ_plot, filename = "germ_plot.png")
+
+
+germ_plot <- ggplot(data = prediction_df)+
+  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = germ.binned, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  # scale_fill_manual(values = c(""))
+  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_minimal()
+
+germ_plot
 
 
 
