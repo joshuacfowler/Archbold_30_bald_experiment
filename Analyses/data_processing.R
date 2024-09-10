@@ -414,25 +414,29 @@ ERYCUN <- ERYCUN_abs %>%
   full_join(ERYCUN_apfi) %>% 
   full_join(ERYCUN_apsc) %>% 
   # filter(!is.na(surv)) %>% 
+  mutate(flw_status = case_when(flw_stem>0 ~ 1, flw_stem==0 ~ 0,
+                                surv == 0 ~ NA)) %>% 
   group_by(plant_id) %>% 
   arrange(plant_id, census_year) %>% 
   mutate(year.t1 = census_year,
          surv.t1 = surv,
          ros_diameter.t1 = ros_diameter,
          max_stem_height.t1 = max_stem_height,
+         flw_status.t1 = flw_status,
          flw_stem.t1 = flw_stem,
          flw_head.t1 = flw_head,
          herb_count.t1 = herb_count) %>% 
   mutate(year.t = dplyr::lag(year.t1, n = 1, default = NA),
          ros_diameter.t = dplyr::lag(ros_diameter.t1, n = 1, default = NA),
          max_stem_height.t = dplyr::lag(max_stem_height.t1, n = 1, default = NA),
+         flw_status.t = dplyr::lag(flw_status.t1, n = 1, default = NA),
          flw_stem.t = dplyr::lag(flw_stem.t1, n = 1, default = NA),
          flw_head.t = dplyr::lag(flw_head.t1, n = 1, default = NA),
          herb_count.t = dplyr::lag(herb_count.t1, n = 1, default = NA)) %>% 
   filter(!is.na(surv.t1)) %>% 
   select(plant_id,Site_tag, bald, patch, quad, plant, TP, row_id, first_year, 
-         year.t1, ARCHBOLD_surv, surv.t1, ros_diameter.t1, max_stem_height.t1, flw_stem.t1, flw_head.t1, herb_count.t1,
-         year.t, ros_diameter.t, max_stem_height.t, flw_stem.t, flw_head.t, herb_count.t)
+         year.t1, ARCHBOLD_surv, surv.t1, ros_diameter.t1, max_stem_height.t1, flw_status.t1, flw_stem.t1, flw_head.t1, herb_count.t1,
+         year.t, ros_diameter.t, max_stem_height.t, flw_status.t, flw_stem.t, flw_head.t, herb_count.t)
 
 
 
@@ -725,8 +729,8 @@ BALANG_growth <- BALANG_renamed %>%
   mutate(surv = case_when(!is.na(height) ~ "alive",
                           !is.na(dplyr::lag(height, n = 1)) & is.na(dplyr::lead(height, n = 1)) & is.na(dplyr::lead(height, n = 2)) & is.na(height) ~ "inferred dead",
                           TRUE ~ "not recorded")) %>% 
-  mutate(toothpick_id = str_extract(value, pattern = regex(toothpick_pattern, ignore_case = TRUE)))
-  select(month, year, id, height, surv,value)
+  mutate(toothpick_id = str_extract(value, pattern = regex(toothpick_pattern, ignore_case = TRUE))) %>% 
+  dplyr::select(month, year, id, height, surv,value)
     
 
   
@@ -881,8 +885,8 @@ CHAFAS_growth <- CHAFAS_renamed %>%
     mutate(surv = case_when(!is.na(height) ~ "alive",
                             !is.na(dplyr::lag(height, n = 1)) & is.na(dplyr::lead(height, n = 1)) & is.na(dplyr::lead(height, n = 2)) & is.na(height) ~ "inferred dead",
                             TRUE ~ "not recorded")) %>% 
-    mutate(toothpick_id = str_extract(value, pattern = regex(toothpick_pattern, ignore_case = TRUE)))
-  select(month, year, id, height, surv,value)
+    mutate(toothpick_id = str_extract(value, pattern = regex(toothpick_pattern, ignore_case = TRUE))) %>% 
+  dplyr::select(month, year, id, height, surv,value)
   
 
   
@@ -1019,6 +1023,9 @@ CHAFLO_test <- CHAFLO_seedling_census %>%
 ####################################################################################
 ###### Cleaning and merging together PARCHA #######################################
 ####################################################################################
+# PARCHA data comes from plots where all individuals were marked in 2003-ish, and new recruits added, but only for the first few years until 2005/2006. these tagged plants were followed until they died out by 2010. 
+# as a conseuence we don't have complete records of all plants in each plot. but we do have lots of individuals. Some of these individuals we know their age accurately, and others we don't know. 
+
 # column_string <- c("ARCHBOLD_surv","resprout", "survival", "stem_count", "max_height", "stem_heights", "dead_stems", "flw_status", "herb", "notes")
 PARCHA_colnames <- c("bald", "fire", 	"gap",	"site","plot",	"tag",
                      "ARCHBOLD_surv;Mar2010", "resprout;Mar2010",
@@ -1077,28 +1084,61 @@ PARCHA_dates <- PARCHA_renamed %>%
                           ARCHBOLD_surv == 0 ~ 0,
                           ARCHBOLD_surv == 3 ~ 1,
                           ARCHBOLD_surv == 5 ~ 1,
+                          ARCHBOLD_surv == 7 ~ 1,
+                          ARCHBOLD_surv == 8 ~ NA,
                           ARCHBOLD_surv == 9 ~ NA,
                           ARCHBOLD_surv == 2 ~ NA)) %>% 
   group_by(plant_id) %>% 
-  mutate(birth_year = case_when(ARCHBOLD_surv == 5 ~ as.numeric(census_year)),
-         birth_month = case_when(ARCHBOLD_surv == 5 ~ as.numeric(census_month))) %>% 
+  mutate(birth_year = case_when(ARCHBOLD_surv == 5 | ARCHBOLD_surv == 7 ~ as.numeric(census_year)),
+         birth_month = case_when(ARCHBOLD_surv == 5 | ARCHBOLD_surv == 7 ~ as.numeric(census_month))) %>% 
   fill(birth_year, .direction = "updown") %>% 
   fill(birth_month, .direction = "updown") %>% 
   mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
          census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
-         age = as.period(interval(birth_date, census_date))) 
+         age = as.period(interval(birth_date, census_date))) %>% 
+  filter(age>=0|is.na(age)) %>% 
+  filter(ARCHBOLD_surv != 9 & ARCHBOLD_surv !=2 & ARCHBOLD_surv !=8)
+
+
+# ggplot(PARCHA_dates)+
+#   geom_histogram(aes(x = census_year, fill = factor(as.numeric(age))), position = "stack", stat = "count")
+# 
+# ggplot(PARCHA_dates)+
+#   geom_histogram(aes(x = year(age), position = , stat = "count"))
 
 
 PARCHA <- PARCHA_dates %>% 
-  filter(age>=0|is.na(age))
+  group_by(plant_id) %>% 
+  arrange(plant_id, census_year, census_month) %>% 
+  mutate(year.t1 = census_year,
+         month.t1 = census_month,
+         census_date.t1 = census_date,
+         surv.t1 = surv,
+         resprout.t1 = resprout,
+         age.t1 = age,
+         flw.t1 = flowering,
+         length.t1 = length,
+         width.t1 = width,
+         height.t1 = height) %>% 
+  mutate(year.t = dplyr::lag(year.t1,  n = 1, default = NA),
+         month.t = dplyr::lag(month.t1,  n = 1, default = NA),
+         census_date.t = dplyr::lag(census_date.t1,  n = 1, default = NA),
+         surv.t = dplyr::lag(surv.t1,  n = 1, default = NA),
+         resprout.t = dplyr::lag(resprout.t1,  n = 1, default = NA),
+         age.t = dplyr::lag(age.t1,  n = 1, default = NA),
+         flw.t = dplyr::lag(flw.t1,  n = 1, default = NA),
+         length.t = dplyr::lag(length.t1,  n = 1, default = NA),
+         width.t = dplyr::lag(width.t1,  n = 1, default = NA),
+         height.t = dplyr::lag(height.t1,  n = 1, default = NA)) %>% 
+  filter(!is.na(surv.t1)) %>% 
+  select(bald, fire_unit, gap, site, plot, tag, row_id, plant_id, 
+         birth_year, birth_month, birth_date,
+         ARCHBOLD_surv, year.t1, month.t1, census_date.t1, surv.t1, resprout.t1, age.t1,
+         flw.t1, length.t1, width.t1 , height.t1,
+         year.t, month.t, census_date.t,  surv.t,        
+         resprout.t, age.t, flw.t, 
+         length.t, width.t, height.t)
 
-PARCHA_noAge <- PARCHA %>% 
-  filter(is.na(age))
-
-PARCHA$age <- as.period(interval(PARCHA$birth_date, PARCHA$census_date))
-
-  
-  mutate(age = as.numeric(census_year) - as.numeric(birth_year))
 
 ####################################################################################
 ###### Processing the soil nutrient analysis data ##################################
@@ -1118,14 +1158,14 @@ nutrients <- nutrients_raw %>%
   mutate(across(ID:pH, ~as.numeric(.))) %>% 
   left_join(nutrients_id_key, by = c("ID" = "Soil_analysis_number"))
 
-ggplot(data = nutrients)+
-  geom_histogram(aes(x = pH, fill = project))
-
-ggplot(data = nutrients)+
-  geom_histogram(aes(x = OrgMat, fill = project))
-
-ggplot(data = nutrients)+
-  geom_histogram(aes(x = Fe, fill = project))
+# ggplot(data = nutrients)+
+#   geom_histogram(aes(x = pH, fill = project))
+# 
+# ggplot(data = nutrients)+
+#   geom_histogram(aes(x = OrgMat, fill = project))
+# 
+# ggplot(data = nutrients)+
+#   geom_histogram(aes(x = Fe, fill = project))
 
 ####################################################################################
 ###### Merging the datasets with the environmental covariates ######################
@@ -1142,7 +1182,9 @@ fire_summary <- ARCHBOLD_fire_to2022 %>%
   ungroup() %>% 
   add_row(Bald_U = "1S", Bald_ = 1, last_fire = NA, time_since_fire = NA, fire_list = NA, fire_frequency = 0) %>% 
   mutate(bald = case_when(as.character(Bald_) %in% c("1", "45","95") ~ as.character(Bald_),
-                          TRUE ~ as.character(Bald_U)))
+                          TRUE ~ as.character(Bald_U)),
+         bald_simple = as.character(parse_number(bald)))
+  
 
 # Now getting the relative elevation from the old fire history file
 
@@ -1157,8 +1199,8 @@ elev.df <- read_xlsx(path = "~/Dropbox/UofMiami/Experiment Set up/firehistory_th
                      bald == "07N" ~ "7N",
                      bald == "35N" ~ "35",
                      bald == "65E" ~ "65",
-                     TRUE ~ bald))
-
+                     TRUE ~ bald),
+    bald_simple = as.character(parse_number(bald)))
 
 
 
@@ -1167,7 +1209,13 @@ ERYCUN_covariates <- ERYCUN %>%
   left_join(elev.df) %>% 
   left_join(fire_summary)
 
+# for now, we don't know if some of these balds were bald 1N or 1S, we just know Bald 1, so I'm gonna pick omang the 4 that we don't know.
 
+PARCHA_covariates <- PARCHA %>% 
+  left_join(elev.df, by = c( "bald" = "bald_simple")) %>% 
+  filter(!(bald.y %in% c("1S", "24S", "46E", "49E"))) %>% select(-bald.y) %>% 
+  left_join(fire_summary, by = c("bald" = "bald_simple")) %>% 
+  filter(!(bald.y %in% c("24S", "46E", "49E"))) %>% select(-bald.y)
 
 
 last_fire_fx <- function(x,y){ max(as.numeric(x)[as.numeric(x)<=y])}
@@ -1177,6 +1225,10 @@ ERYCUN_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(
 ERYCUN_covariates$time_since_fire_actual <- ERYCUN_covariates$year.t1 - ERYCUN_covariates$last_fire_actual
 ERYCUN_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(ERYCUN_covariates$fire_list), ", "), y= ERYCUN_covariates$year.t1))
 
+
+PARCHA_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(unlist(PARCHA_covariates$fire_list), ", "), y= PARCHA_covariates$year.t1))
+PARCHA_covariates$time_since_fire_actual <- PARCHA_covariates$year.t1 - PARCHA_covariates$last_fire_actual
+PARCHA_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(PARCHA_covariates$fire_list), ", "), y= PARCHA_covariates$year.t1))
 
 
 
