@@ -66,7 +66,7 @@ per_pot_size <- size_census %>%
                           is.na(HeightSize_measurement) ~ DiameterSize_measurement,
                           is.na(DiameterSize_measurement) ~ HeightSize_measurement,
                           TRUE ~ NA)) %>% 
-  filter(census_number == 9)  %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
+  filter(census_number == 10)  %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
   group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
   dplyr::summarize(finalHeight = HeightSize_measurement,
                    finalDiameter = DiameterSize_measurement,
@@ -88,10 +88,21 @@ flw_census <- plants %>%
 per_pot_flw <- flw_census %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
   group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
   mutate(FLW_COUNT = as.numeric(FlwCount_measurement),
-         FLW_STATUS = case_when(FLW_COUNT >= 1 ~ 1, FLW_COUNT == 0 ~ 0, is.na(FLW_COUNT) ~ 0)) %>% 
-  slice(which.max(FLW_COUNT)) %>% 
-  filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "CHAFAS"))
+         FLW_STATUS = case_when(FLW_COUNT >= 1 ~ 1, FLW_COUNT == 0 ~ 0, is.na(FLW_COUNT) ~ 0)) 
   
+  
+  
+per_pot_flw_summary <- per_pot_flw %>% 
+    filter(FLW_STATUS == 1) %>% 
+    summarize(flw_ever = mean(FLW_STATUS>0, na.rm = T),
+            flw_date = min(FlwCount_date)) %>%  
+  filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "POLBAS","LECCER", "LECDEC", "ERYCUN", "CHAFAS"))
+
+
+per_pot_fert <- per_pot_flw %>% 
+  slice(which.max(FLW_COUNT)) %>% # selecting the largest flower count
+  filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "POLBAS","LECCER", "LECDEC", "ERYCUN", "CHAFAS"))
+
 # Now I want to merge in the fire history and elevation data for each bald
 
 
@@ -138,11 +149,14 @@ size.covariates <- per_pot_size %>%
 
 
 
-flw.covariates <- per_pot_flw %>%
+flw.covariates <- per_pot_flw_summary %>%
   left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
   left_join(elev.df, by = join_by(soil_source == bald))
 
 
+fert.covariates <- per_pot_fert %>%
+  left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
+  left_join(elev.df, by = join_by(soil_source == bald))
 
 
 
@@ -166,6 +180,7 @@ mcmc_pars <- list(
   chains = 3
 )
 
+my_palette <- c("#000000", "#E69F00", "#009E73")
 
 ################################################################################
 ######### Regressions of germination rate with environmental covariates ########
@@ -200,7 +215,7 @@ ggplot(data = prediction_df)+
 
 
 # now incorporating the environmental covariates and a random effect
-germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile*rel_elev + spp_code* live_sterile*fire_frequency + (1|soil_source), data = germ.covariates,
+germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = germ.covariates,
               family = binomial(link = "logit"),
               prior = c(set_prior("normal(0,1)", class = "b")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
@@ -208,15 +223,23 @@ germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile*rel_el
 
 
 # Making prediction dataframe
-prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), rel_elev = c(median(germ.covariates$rel_elev)), fire_frequency = seq(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency), by = .2))
+prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+                             rel_elev = c(median(germ.covariates$rel_elev)), fire_frequency = seq(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency), by = .2))
 
-prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), rel_elev = seq(min(germ.covariates$rel_elev), max(germ.covariates$rel_elev), by = .2), fire_frequency = c(median(germ.covariates$fire_frequency)))
+prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), 
+                             rel_elev = seq(min(germ.covariates$rel_elev), max(germ.covariates$rel_elev), by = .2), fire_frequency = c(median(germ.covariates$fire_frequency)))
 
 
-preds <- fitted(germ.m, newdata = prediction_df, re_formula = NA)
-prediction_df$fit <- preds[,"Estimate"]
-prediction_df$lwr <- preds[,"Q2.5"]
-prediction_df$upr <- preds[,"Q97.5"]
+preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)
+prediction_df.1$fit <- preds.1[,"Estimate"]
+prediction_df.1$lwr <- preds.1[,"Q2.5"]
+prediction_df.1$upr <- preds.1[,"Q97.5"]
+
+
+preds.2 <- fitted(germ.m, newdata = prediction_df.2, re_formula = NA)
+prediction_df.2$fit <- preds.2[,"Estimate"]
+prediction_df.2$lwr <- preds.2[,"Q2.5"]
+prediction_df.2$upr <- preds.2[,"Q97.5"]
 
 
 # now we can plot the model predictions
@@ -229,43 +252,49 @@ prediction_df$upr <- preds[,"Q97.5"]
 #   group_by(spp_code, elev_bin, fire_frequency, live_sterile) %>% 
 #   summarize(mean_elev = mean(rel_elev, na.rm = T),
 #             mean_germ = mean(seed_prop, na.rm = T))
-germ.binned <- germ.covariates %>% 
-         mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
-  group_by(spp_code, elev_bin,  live_sterile) %>% 
-  summarize(mean_elev = mean(rel_elev, na.rm = T),
-            mean_germ = mean(seed_prop, na.rm = T))
 
-germ.binned <- germ.covariates %>% 
-  mutate(fire_bin = cut_number(fire_frequency, 3)) %>% 
+germ.binned.1 <- germ.covariates %>% 
+  mutate(fire_bin = fire_frequency, 3) %>% 
   group_by(spp_code, fire_bin,  live_sterile) %>% 
   summarize(mean_elev = mean(rel_elev, na.rm = T),
             mean_germ = mean(seed_prop, na.rm = T),
             mean_fire = mean(fire_frequency, na.rm = T))
 
+germ.binned.2 <- germ.covariates %>% 
+         mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
+  group_by(spp_code, elev_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_germ = mean(seed_prop, na.rm = T))
 
-germ_plot <- ggplot(data = prediction_df)+
+
+
+
+germ_plot.1 <- ggplot(data = prediction_df.1)+
   geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
   geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
-  geom_point(data = germ.binned, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
-  # scale_fill_manual(values = c(""))
-  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_minimal()
+  geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_light()
 
-germ_plot
-
-
-
-ggsave(germ_plot, filename = "germ_plot.png")
+germ_plot.1
 
 
-germ_plot <- ggplot(data = prediction_df)+
+
+ggsave(germ_plot.1, filename = "germ_plot_fire.png",  width = 6, height = 6)
+
+
+germ_plot.2 <- ggplot(data = prediction_df.2)+
   geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
   geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
-  geom_point(data = germ.binned, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
-  # scale_fill_manual(values = c(""))
-  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_minimal()
+  geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_light()
 
-germ_plot
+germ_plot.2
 
+ggsave(germ_plot.2, filename = "germ_plot_elev.png", width = 6, height = 6)
 
 
 
