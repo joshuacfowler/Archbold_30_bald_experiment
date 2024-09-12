@@ -7,10 +7,10 @@
 
 library(renv) # track package versions
 # renv::init()
-renv::snapshot()
-# ren
-renv::restore()
-# renv::update()
+# renv::snapshot()
+# # ren
+# renv::restore()
+# # renv::update()
 
 library(tidyverse)
 library(readxl)
