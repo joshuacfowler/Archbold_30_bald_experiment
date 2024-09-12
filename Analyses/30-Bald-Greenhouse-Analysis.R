@@ -62,7 +62,7 @@ size_census <- plants %>%
 
 
 per_pot_size <- size_census %>% 
-  mutate(Size = case_when(!is.na(HeightSize_measurement) & !is.na(DiameterSize_measurement) ~ pi*((DiameterSize_measurement/2)^2)*(HeightSize_measurement),
+  mutate(Size = case_when(!is.na(HeightSize_measurement) & !is.na(DiameterSize_measurement) ~ pi*((DiameterSize_measurement/2)^2)*(HeightSize_measurement/3),
                           is.na(HeightSize_measurement) ~ DiameterSize_measurement,
                           is.na(DiameterSize_measurement) ~ HeightSize_measurement,
                           TRUE ~ NA)) %>% 
@@ -85,20 +85,28 @@ flw_census <- plants %>%
   separate(name, c("measurement", "census_number", "name")) %>% 
   pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number), names_from = c(measurement,name), values_from = value, names_repair = "minimal")
 
-per_pot_flw <- flw_census %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
+per_pot_flw_clean <- flw_census %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
   group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
   mutate(FLW_COUNT = as.numeric(FlwCount_measurement),
          FLW_STATUS = case_when(FLW_COUNT >= 1 ~ 1, FLW_COUNT == 0 ~ 0, is.na(FLW_COUNT) ~ 0)) 
   
   
   
-per_pot_flw_summary <- per_pot_flw %>% 
-    filter(FLW_STATUS == 1) %>% 
-    summarize(flw_ever = mean(FLW_STATUS>0, na.rm = T),
-            flw_date = min(FlwCount_date)) %>%  
+per_pot_flw_summary <- per_pot_flw_clean %>% 
+  filter(FLW_STATUS == 1) %>% 
+    summarize(flw_ever = as.numeric(mean(FLW_STATUS>0, na.rm = T)>0),
+            first_flw = min(FlwCount_date)) %>%  
   filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "POLBAS","LECCER", "LECDEC", "ERYCUN", "CHAFAS"))
 
 
+
+per_pot_flw <- per_pot_flw_clean %>% 
+  left_join(per_pot_flw_summary) %>% 
+  slice(which.max(FLW_COUNT)) %>% # selecting the largest flower count
+  mutate(flw_ever = case_when(is.na(flw_ever) ~ 0,
+                              !is.na(flw_ever) ~ flw_ever))
+  
+  
 per_pot_fert <- per_pot_flw %>% 
   slice(which.max(FLW_COUNT)) %>% # selecting the largest flower count
   filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "POLBAS","LECCER", "LECDEC", "ERYCUN", "CHAFAS"))
@@ -149,7 +157,7 @@ size.covariates <- per_pot_size %>%
 
 
 
-flw.covariates <- per_pot_flw_summary %>%
+flw.covariates <- per_pot_flw %>%
   left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
   left_join(elev.df, by = join_by(soil_source == bald))
 
@@ -243,15 +251,6 @@ prediction_df.2$upr <- preds.2[,"Q97.5"]
 
 
 # now we can plot the model predictions
-# germ.binned <- germ.covariates %>% 
-#   mutate(fire_frequency_obs = fire_frequency,
-#          fire_frequency = case_when(fire_frequency_obs>3.5 ~ 7,
-#                                     fire_frequency_obs== 3 ~ 3,
-#                               fire_frequency_obs<=3.5 ~ 0),
-#          elev_bin = cut_number(rel_elev, 10)) %>% 
-#   group_by(spp_code, elev_bin, fire_frequency, live_sterile) %>% 
-#   summarize(mean_elev = mean(rel_elev, na.rm = T),
-#             mean_germ = mean(seed_prop, na.rm = T))
 
 germ.binned.1 <- germ.covariates %>% 
   mutate(fire_bin = fire_frequency, 3) %>% 
@@ -302,143 +301,175 @@ ggsave(germ_plot.2, filename = "germ_plot_elev.png", width = 6, height = 6)
 
   
 ########################################################################################
-############ Now fitting the models for size ###########  
+############ Regressions of size with environmental covariates ###########  
 ########################################################################################
-  #dropping bald 97, which we mostly pulled due to contamination
-  data <- size.covariates %>% filter(soil_source != 97)  %>% 
-    mutate(finalSize = case_when(spp_code == "ERYCUN" ~ finalDiameter,
-                            TRUE~ finalSize))
+  #Need to calculate ERYCUN based on diameter, rather than combining them because this is what is in the field, but could analyze a couple of ways
+grow_data <- size.covariates  %>% 
+  mutate(finalSize = case_when(spp_code == "ERYCUN" ~ finalDiameter,
+                               TRUE~ finalSize),
+         log_finalSize = log(finalSize))
   
-  
-  size.m <- glm(log(finalSize)~ -1 + spp_code* live_sterile ,family = "gaussian", data = data)
-  
-  prediction_df <- expand.grid(spp_code = unique(size.covariates$spp_code), live_sterile = unique(size.covariates$live_sterile))
-  
-  preds <- predict(size.m, newdata = prediction_df, type = "response", se.fit = TRUE, re.form = NA)
-  
-  
-  critval <- 1.96 ## approx 95% CI
-  prediction_df$upr <- (preds$fit + (critval * preds$se.fit))
-  prediction_df$lwr <- (preds$fit - (critval * preds$se.fit))
-  prediction_df$fit <- (preds$fit)
-  
-  
-  
-  
-  ggplot(data = prediction_df)+
-    geom_jitter(data = data, aes( x= live_sterile, y = log(finalSize)), color = "blue", width = .2, alpha = .2)+
-    geom_point(aes(x = live_sterile, y = fit)) +
-    geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+
-    facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
-  
-  
-  size.m <- lmer(log(finalSize)~ -1 + spp_code* live_sterile*rel_elev + (1|soil_source), data = data)
 
-  summary(size.m)
-  anova(size.m, test = "Chisq")
-  
-  
-  
-  prediction_df <- expand.grid(spp_code = unique(size.covariates$spp_code), live_sterile = unique(size.covariates$live_sterile), rel_elev = seq(from = min(data$rel_elev), to = max(data$rel_elev), by = .2))
-  
-  preds <- predict(size.m, newdata = prediction_df, type = "response", se.fit = TRUE, re.form = NA)
-  
-  
-  critval <- 1.96 ## approx 95% CI
-  prediction_df$upr <- (preds$fit + (critval * preds$se.fit))
-  prediction_df$lwr <- (preds$fit - (critval * preds$se.fit))
-  prediction_df$fit <- (preds$fit)
-  
-  
-  # now we can plot the model predictions
-  
-  ggplot(data = prediction_df)+
-    geom_point(data = data, aes( x= rel_elev, y = log(finalSize), color = live_sterile), alpha = .2)+
-    geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-    geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
-    # scale_fill_manual(values = c(""))
-    facet_wrap(~spp_code, scales = "free_y") + labs(y = "log(size)") + theme_minimal()
-  
-  
-  
-  
-  # And now analyzing fire frequency
-  
-  size.m <- lmer(log(finalSize)~ -1 + spp_code* live_sterile*fire_frequency + (1|soil_source), data = data)
-  
-  summary(size.m)
-  anova(size.m, test = "Chisq")
-  
-  
-  
-  prediction_df <- expand.grid(spp_code = unique(size.covariates$spp_code), live_sterile = unique(size.covariates$live_sterile), fire_frequency = seq(from = min(data$fire_frequency), to = max(data$fire_frequency), by = .2))
-  
-  preds <- predict(size.m, newdata = prediction_df, type = "response", se.fit = TRUE, re.form = NA)
-  
-  
-  critval <- 1.96 ## approx 95% CI
-  prediction_df$upr <- (preds$fit + (critval * preds$se.fit))
-  prediction_df$lwr <- (preds$fit - (critval * preds$se.fit))
-  prediction_df$fit <- (preds$fit)
-  
-  
-  # now we can plot the model predictions
-  
- grow_plot <-  ggplot(data = prediction_df)+
-    geom_point(data = data, aes( x= fire_frequency, y = log(finalSize), color = live_sterile), alpha = .2)+
-    geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-    geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
-    # scale_fill_manual(values = c(""))
-    facet_wrap(~spp_code,) + labs(y = "log(Size)") + theme_minimal()
-  
-  ggsave(grow_plot, filename = "grow_plot.png")
-  
-  # and now analyzing time since fire
-  
-  data <- data %>% filter(!is.na(time_since_fire)) # dropping one bald which was never burned, so has NA values
-  
-  size.m <- lmer(log(finalSize)~ -1 + spp_code* live_sterile*time_since_fire + (1|soil_source), data = data)
-  
-  summary(size.m)
-  anova(size.m, test = "Chisq")
-  
-  
-  
-  prediction_df <- expand.grid(spp_code = unique(size.covariates$spp_code), live_sterile = unique(size.covariates$live_sterile), time_since_fire = seq(from = min(data$time_since_fire), to = max(data$time_since_fire), by = .2))
-  
-  preds <- predict(size.m, newdata = prediction_df, type = "response", se.fit = TRUE, re.form = NA)
-  
-  
-  critval <- 1.96 ## approx 95% CI
-  prediction_df$upr <- (preds$fit + (critval * preds$se.fit))
-  prediction_df$lwr <- (preds$fit - (critval * preds$se.fit))
-  prediction_df$fit <- (preds$fit)
-  
-  
-  # now we can plot the model predictions
-  
-  ggplot(data = prediction_df)+
-    geom_point(data = size.covariates, aes( x= time_since_fire, y = log(finalSize), color = live_sterile), alpha = .2)+
-    geom_ribbon(aes(x = time_since_fire, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-    geom_line(aes(x = time_since_fire, y = fit, group = live_sterile, color = live_sterile)) +
-    # scale_fill_manual(values = c(""))
-    facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
-  
-  
-  
-  
-  
-  ################################################################################
-  ######### Regressions of probability of flowering with environmental covariates ########
-  ################################################################################
+grow.m <- brm(log_finalSize ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = grow_data,
+              family = "gaussian",
+              prior = c(set_prior("normal(0,10)", class = "b")),
+              warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+
+
+
+# Making prediction dataframe
+prediction_df.1 <- expand.grid(spp_code = unique(grow_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(grow_data$live_sterile),
+                               rel_elev = c(median(grow_data$rel_elev)), fire_frequency = seq(min(grow_data$fire_frequency), max(grow_data$fire_frequency), by = .2))
+
+prediction_df.2 <- expand.grid(spp_code = unique(grow_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(grow_data$live_sterile), 
+                               rel_elev = seq(min(grow_data$rel_elev), max(grow_data$rel_elev), by = .2), fire_frequency = c(median(grow_data$fire_frequency)))
+
+
+preds.1 <- fitted(grow.m, newdata = prediction_df.1, re_formula = NA)
+prediction_df.1$fit <- preds.1[,"Estimate"]
+prediction_df.1$lwr <- preds.1[,"Q2.5"]
+prediction_df.1$upr <- preds.1[,"Q97.5"]
+
+
+preds.2 <- fitted(grow.m, newdata = prediction_df.2, re_formula = NA)
+prediction_df.2$fit <- preds.2[,"Estimate"]
+prediction_df.2$lwr <- preds.2[,"Q2.5"]
+prediction_df.2$upr <- preds.2[,"Q97.5"]
+
+
+# now we can plot the model predictions
+
+grow.binned.1 <- grow_data %>% 
+  mutate(fire_bin = fire_frequency, 3) %>% 
+  group_by(spp_code, fire_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_grow = mean(log_finalSize, na.rm = T),
+            mean_fire = mean(fire_frequency, na.rm = T))
+
+grow.binned.2 <- grow_data %>% 
+  mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
+  group_by(spp_code, elev_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_grow = mean(log_finalSize, na.rm = T))
+
+
+
+
+grow_plot.1 <- ggplot(data = prediction_df.1)+
+  geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = grow.binned.1, aes( x= mean_fire, y = mean_grow, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code, scales = "free_y") + labs(y = "Size") + theme_light()
+
+grow_plot.1
+
+
+
+ggsave(grow_plot.1, filename = "grow_plot_fire.png",  width = 6, height = 6)
+
+
+grow_plot.2 <- ggplot(data = prediction_df.2)+
+  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = grow.binned.2, aes( x= mean_elev, y = mean_grow, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) + labs(y = "Size") + theme_light()
+
+grow_plot.2
+
+ggsave(grow_plot.2, filename = "grow_plot_elev.png", width = 6, height = 6)
+
+
+
+
+
+########################################################################################
+######### Regressions of probability of flowering with environmental covariates ########
+########################################################################################
   
   # starting first with a model without environmental covariates
-  flw.m <- brm(FLW_STATUS ~ -1 + spp_code* live_sterile*fire_frequency*rel_elev, data = flw.covariates,
+flw.m <- brm(flw_ever ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = flw.covariates,
                 family = bernoulli,
                 prior = c(set_prior("normal(0,1)", class = "b")),
                 warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
-  
-  
+
+
+
+# Making prediction dataframe
+prediction_df.1 <- expand.grid(spp_code = unique(flw.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(flw.covariates$live_sterile),
+                               rel_elev = c(median(flw.covariates$rel_elev)), fire_frequency = seq(min(flw.covariates$fire_frequency), max(flw.covariates$fire_frequency), by = .2))
+
+prediction_df.2 <- expand.grid(spp_code = unique(flw.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(flw.covariates$live_sterile), 
+                               rel_elev = seq(min(flw.covariates$rel_elev), max(flw.covariates$rel_elev), by = .2), fire_frequency = c(median(flw.covariates$fire_frequency)))
+
+
+preds.1 <- fitted(flw.m, newdata = prediction_df.1, re_formula = NA)
+prediction_df.1$fit <- preds.1[,"Estimate"]
+prediction_df.1$lwr <- preds.1[,"Q2.5"]
+prediction_df.1$upr <- preds.1[,"Q97.5"]
+
+
+preds.2 <- fitted(flw.m, newdata = prediction_df.2, re_formula = NA)
+prediction_df.2$fit <- preds.2[,"Estimate"]
+prediction_df.2$lwr <- preds.2[,"Q2.5"]
+prediction_df.2$upr <- preds.2[,"Q97.5"]
+
+
+# now we can plot the model predictions
+
+flw.binned.1 <- flw.covariates %>% 
+  mutate(fire_bin = fire_frequency, 3) %>% 
+  group_by(spp_code, fire_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_flw = mean(flw_ever, na.rm = T),
+            mean_fire = mean(fire_frequency, na.rm = T))
+
+flw.binned.2 <- flw.covariates %>% 
+  mutate(elev_bin = cut_number(rel_elev, 1)) %>% 
+  group_by(spp_code, elev_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_flw = mean(flw_ever, na.rm = T))
+
+
+
+
+flw_plot.1 <- ggplot(data = prediction_df.1)+
+  geom_point(data = flw.covariates, aes(x = fire_frequency, y = flw_ever, color = live_sterile), position = position_jitter(width = 0.05, height =0.05), alpha = .3)+
+  geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = flw.binned.1, aes( x= mean_fire, y = mean_flw, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) + labs(y = "Flowering Probability") + theme_light()
+
+flw_plot.1
+
+
+
+ggsave(flw_plot.1, filename = "flw_plot_fire.png",  width = 6, height = 6)
+
+
+flw_plot.2 <- ggplot(data = prediction_df.2)+
+  geom_point(data = flw.covariates, aes(x = rel_elev, y = flw_ever, color = live_sterile), position = position_jitter(width = 0.05, height =0.05), alpha = .3)+
+  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = flw.binned.2, aes( x= mean_elev, y = mean_flw, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) + labs(y = "Flowering Probability") + theme_light()
+
+flw_plot.2
+
+ggsave(flw_plot.2, filename = "flw_plot_elev.png", width = 6, height = 6)
+
+
+
+
+
+
   
   # Making prediction dataframe
   prediction_df <- expand.grid(spp_code = unique(flw.covariates$spp_code), soil_source = NA, live_sterile = unique(flw.covariates$live_sterile), rel_elev = seq(from = min(germ.covariates$rel_elev), to = max(germ.covariates$rel_elev), by = .2), fire_frequency = c(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency)))
