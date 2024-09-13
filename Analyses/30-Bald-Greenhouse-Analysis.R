@@ -109,7 +109,7 @@ per_pot_flw <- per_pot_flw_clean %>%
   
 per_pot_fert <- per_pot_flw %>% 
   slice(which.max(FLW_COUNT)) %>% # selecting the largest flower count
-  filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "POLBAS","LECCER", "LECDEC", "ERYCUN", "CHAFAS"))
+  filter(spp_code %in% c("HYPCUM", "PARCHA", "ERYCUN")) # BALANG, LECCER, LECDEC, and POLBAS had all less than 3 plants flower, so while I did record flower number, I don't think it's wise to model this. ERYCUN, I think I could potentially use, but but some of the individuals were marked as flowering when they were just bolting so they don't actually have accurate counts. There for I am only analyzing CHAFAS, HYPCUM, PARCHA
 
 # Now I want to merge in the fire history and elevation data for each bald
 
@@ -466,39 +466,89 @@ flw_plot.2
 ggsave(flw_plot.2, filename = "flw_plot_elev.png", width = 6, height = 6)
 
 
+########################################################################################
+############ Regressions of size with environmental covariates ###########  
+########################################################################################
+#Need to calculate ERYCUN based on diameter, rather than combining them because this is what is in the field, but could analyze a couple of ways
+fert_data <- fert.covariates  %>% 
+  filter(FLW_COUNT >0)
+
+fert.m <- brm(FLW_COUNT ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = fert_data,
+              family = "negbinomial",
+              prior = c(set_prior("normal(0,10)", class = "b")),
+              warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+
+pp_check(fert.m) + lims(x = c(0,100))
+
+# Making prediction dataframe
+prediction_df.1 <- expand.grid(spp_code = unique(fert_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(fert_data$live_sterile),
+                               rel_elev = c(median(fert_data$rel_elev)), fire_frequency = seq(min(fert_data$fire_frequency), max(fert_data$fire_frequency), by = .2))
+
+prediction_df.2 <- expand.grid(spp_code = unique(fert_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(fert_data$live_sterile), 
+                               rel_elev = seq(min(fert_data$rel_elev), max(fert_data$rel_elev), by = .2), fire_frequency = c(median(fert_data$fire_frequency)))
+
+
+preds.1 <- fitted(fert.m, newdata = prediction_df.1, re_formula = NA)
+prediction_df.1$fit <- preds.1[,"Estimate"]
+prediction_df.1$lwr <- preds.1[,"Q2.5"]
+prediction_df.1$upr <- preds.1[,"Q97.5"]
+
+
+preds.2 <- fitted(fert.m, newdata = prediction_df.2, re_formula = NA)
+prediction_df.2$fit <- preds.2[,"Estimate"]
+prediction_df.2$lwr <- preds.2[,"Q2.5"]
+prediction_df.2$upr <- preds.2[,"Q97.5"]
+
+
+# now we can plot the model predictions
+
+fert.binned.1 <- fert_data %>% 
+  mutate(fire_bin = fire_frequency, 3) %>% 
+  group_by(spp_code, fire_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_fert = mean(FLW_COUNT, na.rm = T),
+            mean_fire = mean(fire_frequency, na.rm = T))
+
+fert.binned.2 <- fert_data %>% 
+  mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
+  group_by(spp_code, elev_bin,  live_sterile) %>% 
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_fert = mean(FLW_COUNT, na.rm = T))
 
 
 
 
-  
-  # Making prediction dataframe
-  prediction_df <- expand.grid(spp_code = unique(flw.covariates$spp_code), soil_source = NA, live_sterile = unique(flw.covariates$live_sterile), rel_elev = seq(from = min(germ.covariates$rel_elev), to = max(germ.covariates$rel_elev), by = .2), fire_frequency = c(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency)))
-  
-  
-  preds <- fitted(flw.m, newdata = prediction_df)
-  prediction_df$fit <- preds[,"Estimate"]
-  prediction_df$lwr <- preds[,"Q2.5"]
-  prediction_df$upr <- preds[,"Q97.5"]
-  
-  
-  # now we can plot the model predictions
-  flw.binned <- flw.covariates %>% 
-    ungroup() %>%
-    mutate(fire_frequency_obs = fire_frequency,
-           fire_frequency = case_when(fire_frequency_obs>3.5 ~ 7,
-                                      fire_frequency_obs<=3.5 ~ 0),
-           elev_bin = cut_number(rel_elev, 10)) %>% 
-    group_by(spp_code, elev_bin, fire_frequency, live_sterile) %>% 
-    summarize(mean_elev = mean(rel_elev, na.rm = T),
-              mean_flw = mean(FLW_STATUS, na.rm = T))
-  
-  
-  
-  ggplot(data = prediction_df)+
-    geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-    geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
-    geom_point(data = flw.binned, aes( x= mean_elev, y = mean_flw, color = live_sterile), alpha = .5)+
-    # scale_fill_manual(values = c(""))
-    facet_wrap(~spp_code+fire_frequency, scales = "free_y") + labs(y = "Flowering Probability") + theme_minimal()
-  
+fert_plot.1 <- ggplot(data = prediction_df.1)+
+  geom_point(data = fert_data, aes( x= fire_frequency, y = FLW_COUNT, color = live_sterile), alpha = .5)+
+  geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = fert.binned.1, aes( x= mean_fire, y = mean_fert, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code, scales = "free_y") + labs(y = "# of Flws or Stems") + theme_light()
+
+fert_plot.1
+
+
+
+ggsave(fert_plot.1, filename = "fert_plot_fire.png",  width = 6, height = 6)
+
+
+fert_plot.2 <- ggplot(data = prediction_df.2)+
+  geom_point(data = fert_data, aes(x = rel_elev, y = FLW_COUNT, color = live_sterile), alpha = .5)+
+  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = fert.binned.2, aes( x= mean_elev, y = mean_fert, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code, scales = "free_y") + labs(y = "# of Flws or Stems") + theme_light()
+
+fert_plot.2
+
+ggsave(fert_plot.2, filename = "fert_plot_elev.png", width = 6, height = 6)
+
+
+
+
+
   
