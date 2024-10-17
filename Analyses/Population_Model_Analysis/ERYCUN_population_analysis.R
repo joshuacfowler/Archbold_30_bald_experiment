@@ -81,6 +81,7 @@ dimnames(lambda) <- list(Bald = balds,  Iter = paste0("iter",1:ndraws))
 lambda_cube <- cubelyr::as.tbl_cube(lambda)
 lambda_df <- as_tibble(lambda_cube)
 
+write_csv(lambda_df, "prelim_IPM_lambdas.csv")
 
 
 

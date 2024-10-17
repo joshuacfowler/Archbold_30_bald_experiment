@@ -170,7 +170,7 @@ bigmatrix<-function(params,models,matdim, extension=1){
   
   #growth/survival transition
   Tmat <-matrix(0,matdim,matdim)
-  Tmat[1:(matdim),1:(matdim)] <- t(outer(y,y, FUN = pxy,models=models,params=params))
+  Tmat[1:(matdim),1:(matdim)] <- h*t(outer(y,y, FUN = pxy,models=models,params=params))
   MPMmat<-Tmat + Fmat
   return(list(MPMmat = MPMmat, Tmat = Tmat, Fmat = Fmat))
 }
