@@ -78,7 +78,7 @@ ERYCUN_surv.df <- ERYCUN %>%
 ERYCUN_flw_status.df <- ERYCUN %>% 
   filter(!is.na(flw_status.t) & !is.na(log_size.t)) 
 ERYCUN_flw_stem.df <- ERYCUN %>% 
-  filter(flw_status.t == 1 & !is.na(flw_stem.t) & flw_stem.t !=0 !is.na(log_size.t))
+  filter(flw_status.t == 1 & !is.na(flw_stem.t) & flw_stem.t !=0 & !is.na(log_size.t))
 ERYCUN_flw_head.df <- ERYCUN %>% 
   filter(flw_status.t == 1 & !is.na(flw_head.t) & flw_head.t>0 & !is.na(log_size.t))
 ERYCUN_growth.df <- ERYCUN %>% 

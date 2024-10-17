@@ -148,7 +148,7 @@ fx<-function(x,models,params){
   xb<-pmin(x,params$max_size) # any predicted plants larger than max size will set to be max size
   newdata <- data.frame(log_size.t = xb, year.t1 = params$year.t1, bald = params$bald)
   flw_prob <- posterior_epred(object = models$flw, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
-  flw_stem <- posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
+  flw_stem <- exp(posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,])
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   flw_head <- models$head
   recruit <- models$recruit
@@ -170,7 +170,7 @@ bigmatrix<-function(params,models,matdim, extension=1){
   
   #growth/survival transition
   Tmat <-matrix(0,matdim,matdim)
-  Tmat[1:(matdim),1:(matdim)] <- t(outer(y,y, FUN = pxy,models=models,params=make_params()))
+  Tmat[1:(matdim),1:(matdim)] <- t(outer(y,y, FUN = pxy,models=models,params=params))
   MPMmat<-Tmat + Fmat
   return(list(MPMmat = MPMmat, Tmat = Tmat, Fmat = Fmat))
 }
