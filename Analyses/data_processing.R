@@ -1183,6 +1183,8 @@ fire_summary <- ARCHBOLD_fire_to2022 %>%
   add_row(Bald_U = "1S", Bald_ = 1, last_fire = NA, time_since_fire = NA, fire_list = NA, fire_frequency = 0) %>% 
   mutate(bald = case_when(as.character(Bald_) %in% c("1", "45","95") ~ as.character(Bald_),
                           TRUE ~ as.character(Bald_U)),
+         bald = case_when(Bald_U == "1S" ~ "1S", 
+                          Bald_U == "95W" ~ "95W", Bald_U == "95N" ~ "95N", TRUE ~ bald),
          bald_simple = as.character(parse_number(bald)))
   
 
@@ -1193,21 +1195,29 @@ elev.df <- read_xlsx(path = "~/Dropbox/UofMiami/Experiment Set up/firehistory_th
   dplyr::select(bald, rel_elev) %>% 
   mutate(
     bald = case_when(bald == "01S" ~ "1S",
-                     bald == "01N" ~ "1N",
+                     bald == "01N" ~ "1",
                      bald == "02" ~ "2",
                      bald == "05E" ~ "5E",
                      bald == "07N" ~ "7N",
                      bald == "35N" ~ "35",
                      bald == "65E" ~ "65",
+                     bald == "85N" ~ "85",
+                     bald == "45N" ~ "45",
+                     bald == "70N"~ "70",
+                     bald == "72N" ~ "72",
+                     bald == "95" ~ "95S",
                      TRUE ~ bald),
     bald_simple = as.character(parse_number(bald)))
 
 
 
 # Pulling out fire history relative to the observation year for each datapoint
+# needing to change a few of the names of balds to make them line up with names in elev and fire datasets. this also should be double checked because some you have to choose N/S
 ERYCUN_covariates <- ERYCUN %>% 
   left_join(elev.df) %>% 
-  left_join(fire_summary)
+  left_join(fire_summary, by = join_by(bald)) %>% 
+    mutate(rel_elev = case_when(bald == 95 ~ 0.68, TRUE ~ rel_elev)) %>% 
+  filter(Site_tag == "archbold")
 
 # for now, we don't know if some of these balds were bald 1N or 1S, we just know Bald 1, so I'm gonna pick omang the 4 that we don't know.
 
@@ -1233,7 +1243,7 @@ PARCHA_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x =
 
 
 ERYCUN_covariates <- ERYCUN_covariates %>% 
-  mutate(fire_frequency_actual = case_when(bald == "1" ~ 0/(year.t1-1950),
+  mutate(fire_frequency_actual = case_when(bald == "1S" ~ 0/(year.t1-1950),
                                            TRUE ~ fire_frequency_actual)) %>% 
   dplyr::select(-last_fire, -fire_frequency, -time_since_fire)
 

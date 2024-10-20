@@ -16,7 +16,9 @@ make_mods <- function(grow, surv, flw, fert, head, recruit){
   models$recruit <- recruit
   return(models)
 }
-make_params <- function(bald.rfx=F,year.rfx=F,year=NULL,size_bounds){
+make_params <- function(bald.rfx=F,year.rfx=F,year=NULL,preddata,
+                        microbe_off=0,germ_microbe, grow_microbe, flw_microbe,
+                        size_bounds){
                         #surv_par,surv_sdlg_par,grow_par,grow_sdlg_par,flow_par,fert_par,spike_par,seed_par,recruit_par){
 
   # newdata <- data.fram(log_size.t = 
@@ -38,103 +40,45 @@ make_params <- function(bald.rfx=F,year.rfx=F,year=NULL,size_bounds){
   # # 
   # 
   params <- c()
-  # #survival
-  # params$surv_int <- surv_par$beta0[draw,species] + 
-  #   endo_mean_U * surv_par$betaendo[draw,species] + 
-  #   original * surv_par$betaorigin[draw] +
-  #   rfx_surv
-  # params$surv_spei <- spei_surv
-  # params$surv_slope <- surv_par$betasize[draw,species]
-  # params$surv_slope_2 <- surv_par$betasize_2[draw,species]
-  # 
-  # # seedling survival
-  # params$surv_sdlg_int <- surv_sdlg_par$beta0[draw,species] + 
-  #   endo_mean_U * surv_sdlg_par$betaendo[draw,species] + 
-  #   rfx_surv_sdlg
-  # params$surv_sdlg_spei <- spei_surv_sdlg
-  # 
-  # #growth
-  # params$grow_int <- grow_par$beta0[draw,species] + 
-  #   endo_mean_U * grow_par$betaendo[draw,species] + 
-  #   original * grow_par$betaorigin[draw] +
-  #   rfx_grow
-  # params$grow_spei <- spei_grow
-  # params$grow_slope <- grow_par$betasize[draw,species] 
-  # params$grow_slope_2 <- grow_par$betasize_2[draw,species]  
-  # 
-  # params$grow_sigma <- grow_par$sigma[draw] 
-  # # seedling growth
-  # params$grow_sdlg_int <- grow_sdlg_par$beta0[draw,species] + 
-  #   endo_mean_U * grow_sdlg_par$betaendo[draw,species] + 
-  #   rfx_grow_sdlg
-  # params$grow_sdlg_spei <- spei_grow_sdlg
-  # params$grow_sdlg_sigma <- grow_sdlg_par$sigma[draw] 
-  # 
-  # #flowering
-  # params$flow_int <- flow_par$beta0[draw,species] + 
-  #   endo_mean_F * flow_par$betaendo[draw,species] + 
-  #   original * flow_par$betaorigin[draw] +
-  #   spei_flow + rfx_flow
-  # params$flow_spei <- spei_flow
-  # params$flow_slope <- flow_par$betasize[draw,species]  
-  # params$flow_slope_2 <- flow_par$betasize_2[draw,species]  
-  # 
-  # #fertility
-  # params$fert_int <- fert_par$beta0[draw,species] +
-  #   endo_mean_F * fert_par$betaendo[draw,species] +
-  #   original * fert_par$betaorigin[draw] +
-  #   rfx_fert
-  # params$fert_spei <- spei_fert
-  # params$fert_slope <- fert_par$betasize[draw,species]
-  # params$fert_slope_2 <- fert_par$betasize_2[draw,species]
-  # 
-  # 
-  # #spikelets
-  # params$spike_int <- spike_par$beta0[draw,species]  +
-  #   endo_mean_F * spike_par$betaendo[draw,species] +
-  #   original * spike_par$betaorigin[draw] +
-  #   rfx_spike
-  # params$spike_spei <- spei_spike
-  # params$spike_slope <- spike_par$betasize[draw,species]  
-  # params$spike_slope_2 <- spike_par$betasize_2[draw,species]  
-  # 
-  # 
-  # #seeds per spikelet
-  # params$seeds_per_spike <- seed_par$beta0[draw,species] + 
-  #   endo_mean_F * seed_par$betaendo[draw,species]
-  # #recruits per seed
-  # params$recruits_per_seed <- recruit_par$beta0[draw,species] + 
-  #   endo_mean_F * recruit_par$betaendo[draw,species] +
-  #   rfx_rct
-  # params$recruits_spei <- spei_rct
+
   params$year.t1 <- year
   params$bald <- bald.rfx
+  
+  
+  params$microbe_off <- microbe_off
+  params$germ_microbe <- germ_microbe[germ_microbe$bald == bald.rfx,]
+  params$grow_microbe <- grow_microbe[grow_microbe$bald == bald.rfx,]
+  params$flw_microbe <- flw_microbe[flw_microbe$bald == bald.rfx,]
   
   #tack on size bounds
   params$max_size <- size_bounds$max_size
   params$min_size <- size_bounds$min_size
   
+  params$newdata <- preddata[preddata$bald == bald.rfx,]
+  params$newdata$year.t1 <-  year
   return(params)
 }
 
 
 # Vital rate functions ----------------------------------------------------
 sx<-function(x,models,params){
-  xb<-pmin(x,params$max_size) # any predicted plants larger than max size will set to be max size
-  newdata <- data.frame(log_size.t = xb, bald = params$year.t1, bald = params$bald)
-  posterior_epred(object = models$surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
+  xb<-data.frame(log_size.t = pmin(x,params$max_size))
+  newdata <- merge(params$newdata, xb)
+  mu <- posterior_epred(object = models$surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
 }
 
 
 gxy <- function(x,y,models,params){
-  xb<-pmin(x,params$max_size)
-  newdata <- data.frame(log_size.t = xb, year.t1 = params$year.t1, bald = params$bald)
+  xb<-data.frame(log_size.t = pmin(x,params$max_size))
+  newdata <- merge(params$newdata, xb)
   pred_mu <- posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1, dpar = c("mu"))[1,]
   pred_sigma <- posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1, dpar = c("sigma"))[1,]
-  return(dnorm(x=y, 
-                  mean=pred_mu,
-                  sd = exp(pred_sigma)))
+  grow <- dnorm(x=y, 
+                mean=pred_mu,
+                sd = exp(pred_sigma))
+  grow1 <- grow+grow*params$microbe_off*params$grow_microbe$rel_diff              
+  return(grow1)
 }
 
 
@@ -145,13 +89,14 @@ pxy<-function(x,y,models,params){
 
 
 fx<-function(x,models,params){
-  xb<-pmin(x,params$max_size) # any predicted plants larger than max size will set to be max size
-  newdata <- data.frame(log_size.t = xb, year.t1 = params$year.t1, bald = params$bald)
-  flw_prob <- posterior_epred(object = models$flw, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
+  xb<-data.frame(log_size.t = pmin(x,params$max_size))
+  newdata <- merge(params$newdata, xb)
+  flw_prob1 <- posterior_epred(object = models$flw, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
+  flw_prob <- flw_prob1+flw_prob1*params$microbe_off*params$flw_microbe$rel_diff
   flw_stem <- exp(posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,])
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   flw_head <- models$head
-  recruit <- models$recruit
+  recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
   seedlings <- flw_prob * flw_stem * flw_head * recruit
   return(seedlings)
 }

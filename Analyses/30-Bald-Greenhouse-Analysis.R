@@ -130,7 +130,6 @@ fire_summary <- fire_to2022 %>%
 
 elev.df <- read_xlsx(path = "~/Dropbox/UofMiami/Experiment Set up/firehistory_thru2018.xlsx", sheet = "Rx_Freq", guess_max = 1048576) %>% # guess_max makes the function look deeper in the columns to assign type
   rename(rel_elev = rel.eve) %>% 
-  dplyr::select(bald, rel_elev) %>% 
   mutate(
          bald = case_when(bald == "01S" ~ "1S",
                           bald == "01N" ~ "1N",
@@ -139,32 +138,35 @@ elev.df <- read_xlsx(path = "~/Dropbox/UofMiami/Experiment Set up/firehistory_th
                           bald == "07N" ~ "7N",
                           bald == "35N" ~ "35",
                           bald == "65E" ~ "65",
-                          TRUE ~ bald))
+                          TRUE ~ bald)) %>% 
+  select(bald, name, rel_elev)
 
 
-
+bald_covariates <- fire_summary %>% 
+  left_join(elev.df, by = join_by(Bald_U == bald)) %>% 
+  filter(!is.na(rel_elev), !is.na(time_since_fire)) %>% 
+  rename(bald = Bald_U)
 
 germ.covariates <- per_pot_germ %>%
-  left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
-  left_join(elev.df, by = join_by(soil_source == bald))
+  left_join(bald_covariates, by = join_by( soil_source == bald))
+
 
 
 
 
 size.covariates <- per_pot_size %>%
-  left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
-  left_join(elev.df, by = join_by(soil_source == bald))
+  left_join(bald_covariates, by = join_by( soil_source == bald))
+
 
 
 
 flw.covariates <- per_pot_flw %>%
-  left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
-  left_join(elev.df, by = join_by(soil_source == bald))
+  left_join(bald_covariates, by = join_by( soil_source == bald))
+
 
 
 fert.covariates <- per_pot_fert %>%
-  left_join(fire_summary, by = join_by( soil_source == Bald_U)) %>% 
-  left_join(elev.df, by = join_by(soil_source == bald))
+  left_join(bald_covariates, by = join_by( soil_source == bald))
 
 
 
@@ -195,35 +197,35 @@ my_palette <- c("#000000", "#E69F00", "#009E73")
 ################################################################################
 
 # starting first with a model without environmental covariates
-germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile, data = germ.covariates,
-                            family = binomial(link = "logit"),
-                            prior = c(set_prior("normal(0,1)", class = "b")),
-                            warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
-
-
-
-# Making prediction dataframe
-
-prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), live_sterile = unique(germ.covariates$live_sterile), total_seeds = 1)
-
-preds <- fitted(germ.m, newdata = prediction_df)
-prediction_df$fit <- preds[,"Estimate"]
-prediction_df$lwr <- preds[,"Q2.5"]
-prediction_df$upr <- preds[,"Q97.5"]
-
-# now we can plot the model predictions
-
-ggplot(data = prediction_df)+
-  # geom_jitter(data = germ.covariates, aes( x= live_sterile, y = seed_prop), color = "blue", width = .2, alpha = .2)+
-  geom_point(aes(x = live_sterile, y = fit), size = 1) +
-  geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+
-  facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
-
-
-
+# germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile, data = germ.covariates,
+#                             family = binomial(link = "logit"),
+#                             prior = c(set_prior("normal(0,1)", class = "b")),
+#                             warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+# 
+# 
+# 
+# # Making prediction dataframe
+# 
+# prediction_df <- expand.grid(spp_code = unique(germ.covariates$spp_code), live_sterile = unique(germ.covariates$live_sterile), total_seeds = 1)
+# 
+# preds <- fitted(germ.m, newdata = prediction_df)
+# prediction_df$fit <- preds[,"Estimate"]
+# prediction_df$lwr <- preds[,"Q2.5"]
+# prediction_df$upr <- preds[,"Q97.5"]
+# 
+# # now we can plot the model predictions
+# 
+# ggplot(data = prediction_df)+
+#   # geom_jitter(data = germ.covariates, aes( x= live_sterile, y = seed_prop), color = "blue", width = .2, alpha = .2)+
+#   geom_point(aes(x = live_sterile, y = fit), size = 1) +
+#   geom_linerange(aes(x = live_sterile, ymin = lwr, ymax = upr))+
+#   facet_wrap(~spp_code, scales = "free_y") + labs(y = "Proportion Germinated") + theme_minimal()
+# 
+# 
+# 
 
 # now incorporating the environmental covariates and a random effect
-germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = germ.covariates,
+germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire + (1|soil_source), data = germ.covariates,
               family = binomial(link = "logit"),
               prior = c(set_prior("normal(0,1)", class = "b")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
@@ -232,10 +234,10 @@ germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_ele
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                             rel_elev = c(median(germ.covariates$rel_elev)), fire_frequency = seq(min(germ.covariates$fire_frequency), max(germ.covariates$fire_frequency), by = .2))
+                             rel_elev = c(median(germ.covariates$rel_elev)), time_since_fire = seq(min(germ.covariates$time_since_fire, na.rm = T), max(germ.covariates$time_since_fire, na.rm = T), by = .2))
 
 prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), 
-                             rel_elev = seq(min(germ.covariates$rel_elev), max(germ.covariates$rel_elev), by = .2), fire_frequency = c(median(germ.covariates$fire_frequency)))
+                             rel_elev = seq(min(germ.covariates$rel_elev), max(germ.covariates$rel_elev), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)))
 
 
 preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)
@@ -253,11 +255,11 @@ prediction_df.2$upr <- preds.2[,"Q97.5"]
 # now we can plot the model predictions
 
 germ.binned.1 <- germ.covariates %>% 
-  mutate(fire_bin = fire_frequency, 3) %>% 
+  mutate(fire_bin = time_since_fire, 3) %>% 
   group_by(spp_code, fire_bin,  live_sterile) %>% 
   summarize(mean_elev = mean(rel_elev, na.rm = T),
             mean_germ = mean(seed_prop, na.rm = T),
-            mean_fire = mean(fire_frequency, na.rm = T))
+            mean_fire = mean(time_since_fire, na.rm = T))
 
 germ.binned.2 <- germ.covariates %>% 
          mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
@@ -269,12 +271,12 @@ germ.binned.2 <- germ.covariates %>%
 
 
 germ_plot.1 <- ggplot(data = prediction_df.1)+
-  geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_ribbon(aes(x = time_since_fire, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = time_since_fire, y = fit, group = live_sterile, color = live_sterile)) +
   geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_light()
+  facet_wrap(~spp_code) + labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
 
 germ_plot.1
 
@@ -289,16 +291,61 @@ germ_plot.2 <- ggplot(data = prediction_df.2)+
   geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) + labs(y = "Proportion Germinated") + theme_light()
+  facet_wrap(~spp_code, scales = "free") + labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
 
 germ_plot.2
 
 ggsave(germ_plot.2, filename = "germ_plot_elev.png", width = 6, height = 6)
 
 
+##### Predictions to generate a relative effect of microbiome that we will use in population model
+ndraws <- 500
+preddata_1 <- bald_covariates %>% 
+  select(bald, time_since_fire, rel_elev) %>% 
+  mutate(total_seeds = 1, soil_source = bald) 
+
+treatment_df <- expand_grid(spp_code = unique(germ.covariates$spp_code), live_sterile = c("live", "sterile"), soil_source = unique(bald_covariates$bald))
+
+preddata <- preddata_1 %>% 
+  left_join(treatment_df)
+
+bald_prediction <- t(fitted(germ.m, newdata = preddata, re_formula = NA,summary=FALSE, allow_new_levels = T, ndraws = ndraws))
+
+    
+dimnames(bald_prediction) <- list(row = paste0("row", 1:nrow(preddata)),Iter = paste0("iter",1:ndraws))
+
+bald_pred_df <- bind_cols(preddata, as_tibble(bald_prediction, rownames = "row") ) %>% 
+  pivot_longer(cols = c(iter1:iter500), names_to = "Iter", values_to = "posterior") 
+
+bald_pred_wide<- bald_pred_df %>% 
+  select(-row) %>% 
+  pivot_wider(names_from = live_sterile, values_from = posterior ) %>% 
+  mutate(rel_diff = ((sterile-live)/sterile))
+
+write_csv(bald_pred_wide, "germ_30bald_predictions.csv")
+
+bald_pred_summary <- bald_pred_wide %>% 
+  group_by(spp_code, bald, rel_elev, time_since_fire) %>% 
+  summarize(rel_diff_mean = mean(rel_diff))
+
+ggplot(bald_pred_summary)+
+  geom_point(aes(y = rel_diff_mean, x = bald))+
+  facet_wrap(~spp_code, scales = "free")
+
+ggplot(bald_pred_summary)+
+  geom_point(aes(y = rel_diff_mean, x = rel_elev))+
+  facet_wrap(~spp_code)
 
 
 
+  
+
+# preddata$fit <- bald_prediction[,"Estimate"]
+# preddata$lwr <- bald_prediction[,"Q2.5"]
+# preddata$upr <- bald_prediction[,"Q97.5"]
+# 
+# pred_wide <- preddata %>% 
+#   pivot_wider(cols = c(fit))
   
 ########################################################################################
 ############ Regressions of size with environmental covariates ###########  
@@ -310,7 +357,7 @@ grow_data <- size.covariates  %>%
          log_finalSize = log(finalSize))
   
 
-grow.m <- brm(log_finalSize ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = grow_data,
+grow.m <- brm(log_finalSize ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire + (1|soil_source), data = grow_data,
               family = "gaussian",
               prior = c(set_prior("normal(0,10)", class = "b")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
@@ -385,13 +432,30 @@ ggsave(grow_plot.2, filename = "grow_plot_elev.png", width = 6, height = 6)
 
 
 
+# setting up predictions across all balds for use in population model
+ndraws <- 500
+preddata <- preddata %>% 
+  filter(spp_code != "LIAOHL")
+bald_prediction <- t(fitted(grow.m, newdata = preddata, re_formula = NA,summary=FALSE, allow_new_levels = T, ndraws = ndraws))
 
+
+dimnames(bald_prediction) <- list(row = paste0("row", 1:nrow(preddata)),Iter = paste0("iter",1:ndraws))
+
+bald_pred_df <- bind_cols(preddata, as_tibble(bald_prediction, rownames = "row") ) %>% 
+  pivot_longer(cols = c(iter1:iter500), names_to = "Iter", values_to = "posterior") 
+
+bald_pred_wide<- bald_pred_df %>% 
+  select(-row) %>% 
+  pivot_wider(names_from = live_sterile, values_from = posterior ) %>% 
+  mutate(rel_diff = ((sterile-live)/sterile))
+
+write_csv(bald_pred_wide, "grow_30bald_predictions.csv")
 ########################################################################################
 ######### Regressions of probability of flowering with environmental covariates ########
 ########################################################################################
   
   # starting first with a model without environmental covariates
-flw.m <- brm(flw_ever ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*fire_frequency + (1|soil_source), data = flw.covariates,
+flw.m <- brm(flw_ever ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire + (1|soil_source), data = flw.covariates,
                 family = bernoulli,
                 prior = c(set_prior("normal(0,1)", class = "b")),
                 warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
@@ -465,6 +529,29 @@ flw_plot.2
 
 ggsave(flw_plot.2, filename = "flw_plot_elev.png", width = 6, height = 6)
 
+
+
+
+
+# setting up predictions across all balds for use in population model
+preddata <- preddata %>% 
+  filter(spp_code != "LIAOHL")
+bald_prediction <- t(fitted(flw.m, newdata = preddata, re_formula = NA,summary=FALSE, allow_new_levels = T, ndraws = ndraws))
+
+
+
+dimnames(bald_prediction) <- list(row = paste0("row", 1:nrow(preddata)),Iter = paste0("iter",1:ndraws))
+
+bald_pred_df <- bind_cols(preddata, as_tibble(bald_prediction, rownames = "row") ) %>% 
+  pivot_longer(cols = c(iter1:iter500), names_to = "Iter", values_to = "posterior") 
+
+bald_pred_wide<- bald_pred_df %>% 
+  select(-row) %>% 
+  pivot_wider(names_from = live_sterile, values_from = posterior ) %>% 
+  mutate(rel_diff = ((sterile-live)/sterile),
+         factor_change = sterile/live)
+
+write_csv(bald_pred_wide, "flw_30bald_predictions.csv")
 
 ########################################################################################
 ############ Regressions of size with environmental covariates ###########  

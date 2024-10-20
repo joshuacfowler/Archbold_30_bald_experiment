@@ -64,7 +64,8 @@ NPkurtosis=function(x,p=0.05) {
 source(paste0(getwd(),"/Analyses/data_processing.R"))
 ERYCUN <- ERYCUN_covariates %>% 
   mutate(log_size.t = log(ros_diameter.t),
-         log_size.t1 = log(ros_diameter.t1)) %>% 
+         log_size.t1 = log(ros_diameter.t1),
+         time_since_fire = time_since_fire_actual) %>% 
   filter(Site_tag != "royce_ranch" & bald != "200")%>% 
   filter(year.t >1989)
   
@@ -108,7 +109,7 @@ mcmc_pars <- list(
 ####################################################################################
 ### ERYCUN  ----
 # starting first with a model without environmental covariates
-erycun.survival <- brm(surv.t1~ 1 + log_size.t + (1|year.t1) + (1|bald), 
+erycun.survival <- brm(surv.t1~ 1 + log_size.t +I(log_size.t^2) + rel_elev + time_since_fire + (1|year.t1) + (1|bald), 
                        data = ERYCUN_surv.df,
                        family = "bernoulli",
                        prior = c(set_prior("normal(0,1)", class = "b")),
@@ -151,7 +152,7 @@ stanvars <- stanvar(scode = stan_funs(name = "sinhasinh"), block = "functions")
 #                      warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
 
-formula <- bf(log_size.t1 ~ 1 + s(log_size.t, bs = "tp") + (1|year.t1) + (1|bald),
+formula <- bf(log_size.t1 ~ 1 + s(log_size.t, bs = "tp") + rel_elev + time_since_fire + (1|year.t1) + (1|bald),
               sigma ~ 1 + s(log_size.t, bs = "tp"))
 erycun.growth <- brm(formula,
                      data = ERYCUN_growth.df,
@@ -171,7 +172,7 @@ erycun.growth <- readRDS("erycun.growth.rds")
 ####################################################################################
 ### ERYCUN  ----
 # starting first with a model for flowering probability
-erycun.flw_status <- brm(flw_status.t~ 1 + s(log_size.t, bs = "tp") + (1|year.t1) + (1|bald), data = ERYCUN_flw_status.df,
+erycun.flw_status <- brm(flw_status.t~ 1 + s(log_size.t, bs = "tp") + rel_elev + time_since_fire+ (1|year.t1) + (1|bald), data = ERYCUN_flw_status.df,
                        family = "bernoulli",
                        prior = c(set_prior("normal(0,1)", class = "b")),
                        warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
@@ -183,10 +184,11 @@ source('Analyses/Vital_Rate_Analysis/stan_funs.R')
 stanvars <- stanvar(scode = stan_funs(name = "PIG"), block = "functions")
 
 
-erycun.flw_stem <- brm(flw_stem.t  ~ 1 + log_size.t, data = ERYCUN_flw_stem.df,
-                         family = PIG,
-                         stanvars = stanvars,
-                         prior = c(set_prior("normal(0,1)", class = "b")),
+erycun.flw_stem <- brm(flw_stem.t  ~ 1 + log_size.t + rel_elev + time_since_fire + (1|year.t1) + (1|bald), data = ERYCUN_flw_stem.df,
+                         family = negbinomial,
+                         # stanvars = stanvars,
+                         prior = c(set_prior("normal(0,5)", class = "b"),
+                                   set_prior( "normal(0,1)", class = "shape")),
                          warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 saveRDS(erycun.flw_stem, "erycun.flw_stem.rds")
 
@@ -342,9 +344,9 @@ y_sim <- posterior_predict(erycun.flw_status, ndraws = 500)
 ppc_dens_overlay(y = ERYCUN_flw_status.df$flw_status.t, yrep = y_sim)
 
 mean_s_plot <-   ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "mean")
-sd_s_plot <- ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "NPsd")
-skew_s_plot <- ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "NPskewness")
-kurt_s_plot <- ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "NPkurtosis")
+sd_s_plot <- ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "sd")
+skew_s_plot <- ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "skewness")
+kurt_s_plot <- ppc_stat(ERYCUN_flw_status.df$flw_status.t, y_sim, stat = "kurtosis")
 flw_moments <- mean_s_plot+sd_s_plot+skew_s_plot+kurt_s_plot + plot_annotation(title = "Flowering Probability")
 flw_moments
 
@@ -400,4 +402,24 @@ flw_head_moments
 
 
 
+####################################################################################
+###### Visualizing variation across the balds ######################################
+####################################################################################
 
+preddata <- expand.grid(log_size.t = mean(ERYCUN_surv.df$log_size.t), year.t1 = NA, bald = unique(ERYCUN_surv.df$bald))
+
+surv_pred <- fitted(erycun.survival, newdata = preddata, probs = c(0.025,0.50,0.975))
+
+surv_pred_df <- bind_cols(preddata, surv_pred)
+
+surv_binned <- ERYCUN_surv.df %>% 
+  group_by(bald) %>% 
+  summarize(mean_surv = mean(surv.t1, na.rm = T),
+            sample_size = n())
+ggplot(surv_pred_df)+
+  # geom_point(data = ERYCUN_surv.df, aes(x = bald, y = surv.t1, color = bald))+
+  geom_point(data = surv_binned, aes(x = bald, y = mean_surv, size = sample_size, color = bald))+
+  geom_point(aes(x = bald, y = Estimate, group = bald), color = "black")+
+  geom_linerange(aes(x = bald, ymin = Q2.5, ymax = Q97.5))+
+  lims(y = c(0,1)) + 
+  theme_classic() + labs(size = "Sample Size", color = "Bald")
