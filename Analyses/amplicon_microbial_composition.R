@@ -6,11 +6,17 @@ library(tidyverse)
 library(GUniFrac)
 library(iNEXT)
 library(vegan)
+library(ape)
+library(readxl)
 # library(mia)
 
 
 path <- c("~/Dropbox/UofMiami/Archbold 30 Bald Experiment - Processed Amplicon Sequencing Data")
 taxonomy <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species", "Accession") 
+
+
+# loading in a key that connects exttraction tube id to our soil source sample id
+extraction_key <- readxl::read_xlsx(path = paste0(path,"/30-Bald-libraryprep_samplepooling.xlsx"), sheet = "bald_id")
 
 # loading in assigned taxonomy based on unite classifier for fungi and silva classifier for bacteria
 taxonomy_ITS.97 <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_97_ITS.tsv" )) %>% 
@@ -52,30 +58,53 @@ community.matrix <- function(x){
   return(s)
   }
  
-rarefaction_plot <-function(x){  
+rarefaction_plot <-function(x){
   x %>% 
     group_by(Site) %>% 
-    mutate(label = if_else(Sample == max(Sample), as.character(Site),NA_character_ )) %>% 
+    mutate(label = if_else(Sample == max(Sample), as.character(Label),NA_character_ )) %>% 
     ggplot()+
-    geom_line(aes(x = Sample, y = Species, group = Site, color = Site))+
-    ggrepel::geom_text_repel(aes(x = Sample, y = Species, label = label), min.segment.length = unit(0, 'lines'), na.rm = TRUE)+
+    geom_line(aes(x = Sample, y = Species, group = Sequencing_ID, color = as.factor(extraction_round)))+
+    ggrepel::geom_text_repel(aes(x = Sample, y = Species, label = label, color = as.factor(extraction_round)), min.segment.length = unit(0, 'lines'), na.rm = TRUE)+
     guides(color = "none")+
     labs(x = "Sequencing Depth", y = "Number of OTUs") + theme_light()
 }
 
-# calculating rarefaction curves
-rarecurve_16S.ESV <- rarecurve(community.matrix(featuretable_16S.ESV), tidy = TRUE) 
-rarecurve_16S.99 <- rarecurve(community.matrix(featuretable_16S.99), tidy = TRUE) 
-rarecurve_16S.97 <- rarecurve(community.matrix(featuretable_16S.97), tidy = TRUE) 
 
-rarecurve_ITS.ESV <- rarecurve(community.matrix(featuretable_ITS.ESV), tidy = TRUE) 
-rarecurve_ITS.99 <- rarecurve(community.matrix(featuretable_ITS.99), tidy = TRUE) 
-rarecurve_ITS.97 <- rarecurve(community.matrix(featuretable_ITS.97), tidy = TRUE) 
+# calculating rarefaction curves
+rarecurve_16S.ESV_raw <- rarecurve(community.matrix(featuretable_16S.ESV), tidy = TRUE) 
+rarecurve_16S.ESV <- rarecurve_16S.ESV_raw %>%
+  left_join(extraction_key, by = join_by(Site == Sequencing_ID)) %>% mutate(Sequencing_ID = Site, Label = case_when(!is.na(bald) ~ bald, is.na(bald) ~ Notes))
+
+rarecurve_16S.99_raw <- rarecurve(community.matrix(featuretable_16S.99), tidy = TRUE) 
+rarecurve_16S.99 <- rarecurve_16S.99_raw %>%
+  left_join(extraction_key, by = join_by(Site == Sequencing_ID)) %>% mutate(Sequencing_ID = Site, Label = case_when(!is.na(bald) ~ bald, is.na(bald) ~ Notes))
+
+rarecurve_16S.97_raw <- rarecurve(community.matrix(featuretable_16S.97), tidy = TRUE) 
+rarecurve_16S.97 <- rarecurve_16S.97_raw %>%
+  left_join(extraction_key, by = join_by(Site == Sequencing_ID)) %>% mutate(Sequencing_ID = Site, Label = case_when(!is.na(bald) ~ bald, is.na(bald) ~ Notes))
+
+
+rarecurve_ITS.ESV_raw <- rarecurve(community.matrix(featuretable_ITS.ESV), tidy = TRUE)
+rarecurve_ITS.ESV <- rarecurve_ITS.ESV_raw %>%
+  left_join(extraction_key, by = join_by(Site == Sequencing_ID)) %>% mutate(Sequencing_ID = Site, Label = case_when(!is.na(bald) ~ bald, is.na(bald) ~ Notes))
+
+rarecurve_ITS.99_raw <- rarecurve(community.matrix(featuretable_ITS.99), tidy = TRUE) 
+rarecurve_ITS.99 <- rarecurve_ITS.99_raw %>%
+  left_join(extraction_key, by = join_by(Site == Sequencing_ID)) %>% mutate(Sequencing_ID = Site, Label = case_when(!is.na(bald) ~ bald, is.na(bald) ~ Notes))
+
+rarecurve_ITS.97_raw <- rarecurve(community.matrix(featuretable_ITS.97), tidy = TRUE) 
+rarecurve_ITS.97 <- rarecurve_ITS.97_raw %>%
+  left_join(extraction_key, by = join_by(Site == Sequencing_ID)) %>% mutate(Sequencing_ID = Site, Label = case_when(!is.na(bald) ~ bald, is.na(bald) ~ Notes))
+
 
 # plotting for each OTU clustering level
 plot_rare_16S.ESV <- rarecurve_16S.ESV %>%  rarefaction_plot
 plot_rare_16S.99 <- rarecurve_16S.99 %>%  rarefaction_plot
 plot_rare_16S.97 <- rarecurve_16S.97 %>%  rarefaction_plot
+
+# plot_rare_16S.ESV <- rarecurve_16S.ESV %>% filter(extraction_round == 2) %>%  rarefaction_plot
+# plot_rare_16S.ESV <- rarecurve_16S.ESV %>% filter(extraction_round == 3) %>%  rarefaction_plot
+
 
 plot_rare_ITS.ESV <- rarecurve_ITS.ESV %>%  rarefaction_plot
 plot_rare_ITS.99 <- rarecurve_ITS.99 %>%  rarefaction_plot
@@ -92,55 +121,158 @@ plot_rare_ITS.97
 
 # calculating rarefied datasets to 2000 sequencing
 
-rare_16S.ESV <- Rarefy(community.matrix(featuretable_16S.ESV), depth = 2000) 
-rare_16S.99 <- Rarefy(community.matrix(featuretable_16S.99), depth = 2000) 
-rare_16S.97 <- Rarefy(community.matrix(featuretable_16S.97), depth = 2000) 
+rare_16S.ESV <- Rarefy(community.matrix(featuretable_16S.ESV), depth = 1000) 
+rare_16S.99 <- Rarefy(community.matrix(featuretable_16S.99), depth = 1000) 
+rare_16S.97 <- Rarefy(community.matrix(featuretable_16S.97), depth = 1000) 
 
-rare_ITS.ESV <- Rarefy(community.matrix(featuretable_ITS.ESV), depth = 1000) 
-rare_ITS.99 <- Rarefy(community.matrix(featuretable_ITS.99), depth = 1000) 
-rare_ITS.97 <- Rarefy(community.matrix(featuretable_ITS.97), depth = 1000) 
+rare_ITS.ESV <- Rarefy(community.matrix(featuretable_ITS.ESV), depth = 500) 
+rare_ITS.99 <- Rarefy(community.matrix(featuretable_ITS.99), depth = 500) 
+rare_ITS.97 <- Rarefy(community.matrix(featuretable_ITS.97), depth = 500) 
 
 # filtering out species that are found in the control samples
-sample_16S_list <- c( "16S-16-0","16S-16-1","16S-1N","16S-1S","16S-2","16S-21N","16S-21S","16S-24N",
-                  "16S-24S","16S-26","16S-28","16S-35","16S-36","16S-37","16S-38","16S-39",
-                  "16S-41N","16S-45S","16S-46E","16S-49",
-                  "16S-53C-Mar29","16S-5E","16S-62","16S-65","16S-7N","16S-84","16S-94-Mar29","16S-95",
-                  "16S-97","16S-99")
-
-sample_ITS_list<-c("ITS-16-1","ITS-1N","ITS-21N","ITS-21S","ITS-24N-Apr2","ITS-24S","ITS-26","ITS-28",
-                   "ITS-36","ITS-37","ITS-38","ITS-39","ITS-41N","ITS-45S","ITS-49",
-                   "ITS-53A","ITS-53B","ITS-62","ITS-65-Mar29-8ul","ITS-7N","ITS-84","ITS-94","ITS-95",
-                   "ITS160-ITS160Apr2","ITS2-ITS2Mar29","ITS46E-ITS46EMar29",
-                   "ITS53C-ITS53CMar29","ITS5E-ITS5EApr2","ITS97-ITS97Mar29")
-
-cleaned_16S.ESV <- rare_16S.ESV$otu.tab.rff[,rare_16S.ESV$otu.tab.rff["16S-Control",]==0]
-cleaned_16S.ESV <- cleaned_16S.ESV[sample_16S_list,]
-
-cleaned_16S.99<- rare_16S.99$otu.tab.rff[,rare_16S.99$otu.tab.rff["16S-Control",]==0]
-cleaned_16S.99 <- cleaned_16S.99[sample_16S_list,]
-
-cleaned_16S.97 <- rare_16S.97$otu.tab.rff[,rare_16S.97$otu.tab.rff["16S-Control",]==0]
-cleaned_16S.97 <- cleaned_16S.97[sample_16S_list,]
+sample_16S_list <- extraction_key %>% filter(taxa == "16S", !(Sequencing_ID %in% c("16S-Control","16S-53-control", "16S-16-1", "16S-Cont-Apr2", "16S-53-PCRcontrol", "16S-Control2","16S-53", "16S-53A", "16S-53C-Mar29", "16S-OGC"))) %>% distinct(Sequencing_ID) %>% deframe() 
 
 
-cleaned_ITS.ESV <- rare_ITS.ESV$otu.tab.rff[,rare_ITS.ESV$otu.tab.rff["ITS-Control",]==0]
-cleaned_ITS.ESV <- cleaned_ITS.ESV[sample_ITS_list,]
 
-cleaned_ITS.99<- rare_ITS.99$otu.tab.rff[,rare_ITS.99$otu.tab.rff["ITS-Control",]==0]
-cleaned_ITS.99 <- cleaned_ITS.99[sample_ITS_list,]
-
-cleaned_ITS.97 <- rare_ITS.97$otu.tab.rff[,rare_ITS.97$otu.tab.rff["ITS-Control",]==0]
-cleaned_ITS.97 <- cleaned_ITS.97[sample_ITS_list,]
+sample_ITS_list <- extraction_key %>% filter(taxa == "ITS", !(Sequencing_ID %in% c("ITS-Control","ITS-53-control", "ITS-16-1", "ITS-Cont-Apr2", "ITS-53-PCRcontrol", "ITS-Control2","ITS-53", "ITS-53A", "ITS-53C-Mar29", "ITS-OGC", "ITS2-ITS2Mar29"))) %>% distinct(Sequencing_ID) %>% deframe() 
 
 
-PCA_16S.ESV <- rda(cleaned_16S.ESV)
-PCA_16S.99 <- rda(cleaned_16S.99)
-PCA_16S.97 <- rda(cleaned_16S.97)
+cleaned_16S.ESV <- subset(rare_16S.ESV$otu.tab.rff, rownames(rare_16S.ESV$otu.tab.rff) %in% sample_16S_list)
+cleaned_16S.99 <- subset(rare_16S.99$otu.tab.rff, rownames(rare_16S.99$otu.tab.rff) %in% sample_16S_list)
+cleaned_16S.97 <- subset(rare_16S.97$otu.tab.rff, rownames(rare_16S.97$otu.tab.rff) %in% sample_16S_list)
 
 
-PCA_ITS.ESV <- rda(rare_ITS.ESV$otu.tab.rff)
-PCA_ITS.99 <- rda(rare_ITS.99$otu.tab.rff)
-PCA_ITS.97 <- rda(rare_ITS.97$otu.tab.rff)
+cleaned_ITS.ESV <- subset(rare_ITS.ESV$otu.tab.rff, rownames(rare_ITS.ESV$otu.tab.rff) %in% sample_ITS_list)
+cleaned_ITS.99 <- subset(rare_ITS.99$otu.tab.rff, rownames(rare_ITS.99$otu.tab.rff) %in% sample_ITS_list)
+cleaned_ITS.97 <- subset(rare_ITS.97$otu.tab.rff, rownames(rare_ITS.97$otu.tab.rff) %in% sample_ITS_list)
+
+
+
+# cleaned_16S.ESV <- rare_16S.ESV$otu.tab.rff[,rare_16S.ESV$otu.tab.rff["16S-Control",]!=0]
+# cleaned_16S.ESV <- cleaned_16S.ESV[sample_16S_list,]
+# 
+# cleaned_16S.99<- rare_16S.99$otu.tab.rff[,rare_16S.99$otu.tab.rff["16S-Control",]!=0]
+# cleaned_16S.99 <- cleaned_16S.99[sample_16S_list,]
+# 
+# cleaned_16S.97 <- rare_16S.97$otu.tab.rff[,rare_16S.97$otu.tab.rff["16S-Control",]==0]
+# cleaned_16S.97 <- cleaned_16S.97[sample_16S_list,]
+# 
+
+# cleaned_ITS.ESV <- rare_ITS.ESV$otu.tab.rff[,rare_ITS.ESV$otu.tab.rff["ITS-Control",]==0]
+# cleaned_ITS.ESV <- cleaned_ITS.ESV[sample_ITS_list,]
+# 
+# cleaned_ITS.99<- rare_ITS.99$otu.tab.rff[,rare_ITS.99$otu.tab.rff["ITS-Control",]==0]
+# cleaned_ITS.99 <- cleaned_ITS.99[sample_ITS_list,]
+# 
+# cleaned_ITS.97 <- rare_ITS.97$otu.tab.rff[,rare_ITS.97$otu.tab.rff["ITS-Control",]==0]
+# cleaned_ITS.97 <- cleaned_ITS.97[sample_ITS_list,]
+
+dist_16S.ESV <- vegdist(cleaned_16S.ESV, method = "jaccard", binary=TRUE)
+dist_16S.99 <- vegdist(cleaned_16S.99, method = "jaccard", binary=TRUE)
+dist_16S.97 <- vegdist(cleaned_16S.97, method = "jaccard", binary=TRUE)
+
+
+dist_ITS.ESV <- vegdist(cleaned_ITS.ESV, method = "jaccard", binary=TRUE)
+dist_ITS.99 <- vegdist(cleaned_ITS.99, method = "jaccard", binary=TRUE)
+dist_ITS.97 <- vegdist(cleaned_ITS.97, method = "jaccard", binary=TRUE)
+
+
+
+# performing a PCoA to characteris the composition of each soil sources' microbial community
+PCOA_16S.ESV <- wcmdscale(d = dist_16S.ESV, eig = T)
+PCOA_16S.99 <- wcmdscale(d = dist_16S.99, eig = T)
+PCOA_16S.97 <- wcmdscale(d = dist_16S.97, eig = T)
+
+PCOA_ITS.ESV <- wcmdscale(d = dist_ITS.ESV, eig = T)
+PCOA_ITS.99 <- wcmdscale(d = dist_ITS.99, eig = T)
+PCOA_ITS.97 <- wcmdscale(d = dist_ITS.97, eig = T)
+
+print(PCOA_16S.ESV)
+plot(PCOA_16S.ESV)
+plot(PCOA_16S.99)
+plot(PCOA_16S.97)
+
+plot(PCOA_ITS.ESV)
+plot(PCOA_ITS.99)
+plot(PCOA_ITS.97)
+
+
+
+# saving first two pcoa axes for each plot
+
+axes_16S <- as_tibble(PCOA_16S.ESV$points, rownames = NA) %>% 
+  rownames_to_column(var = "sample_id") %>% mutate(amplicon = substr(sample_id, 1, 3), 
+                                                   soil_tag = substr(sample_id, 5, 100)) %>% 
+  mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
+                                 soil_tag == "16-0"~"16",
+                                 TRUE ~ soil_tag)) %>% 
+  dplyr::select(sample_id, amplicon, soil_source, Dim1, Dim2)
+
+axes_ITS <- as_tibble(PCOA_ITS.ESV$points, rownames = NA) %>% 
+  rownames_to_column(var = "sample_id") %>% mutate(amplicon = substr(sample_id, 1, 3), 
+                                                   soil_tag = substr(sample_id, 5, 100)) %>% 
+  mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
+                                 soil_tag == "6E-ITS46EMar29"~"6E",
+                                 soil_tag == "60-ITS160Apr2"~"160",
+                                 soil_tag == "ITS46E-ITS46EMar29"~"46E",
+                                 soil_tag == "ITS97-ITS97Mar29"~"97",
+                                 soil_tag == "ITS5E-ITS5EApr2"~"5E", 
+                                 soil_tag == "3C-ITS53CMar29" ~ "53",
+                                 soil_tag == "E-ITS5EApr2" ~ "5E",
+                                 soil_tag == "7-ITS97Mar29" ~ "97",
+                                 soil_tag == "65-Mar29-8ul" ~ "65",
+                                 TRUE ~ soil_tag)) %>% 
+  dplyr::select(sample_id, amplicon,  soil_source, Dim1, Dim2)
+  
+
+
+
+# Now I'm gonna calculate shannon diversity for each sample
+
+shannon_16S <- data.frame(sample_id = rownames(cleaned_16S.ESV), shannon_diversity = diversity(cleaned_16S.ESV)) %>% 
+  mutate(amplicon = substr(sample_id, 1, 3), 
+         soil_tag = substr(sample_id, 5, 100)) %>% 
+  mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
+                                 soil_tag == "16-0"~"16",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+
+
+shannon_ITS <- data.frame(sample_id = rownames(cleaned_ITS.ESV), shannon_diversity = diversity(cleaned_ITS.ESV)) %>% 
+  mutate(amplicon = substr(sample_id, 1, 3), 
+         soil_tag = substr(sample_id, 5, 100)) %>% 
+  mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
+                                 soil_tag == "6E-ITS46EMar29"~"6E",
+                                 soil_tag == "60-ITS160Apr2"~"160",
+                                 soil_tag == "ITS46E-ITS46EMar29"~"46E",
+                                 soil_tag == "ITS97-ITS97Mar29"~"97",
+                                 soil_tag == "ITS5E-ITS5EApr2"~"5E", 
+                                 soil_tag == "3C-ITS53CMar29" ~ "53",
+                                 soil_tag == "E-ITS5EApr2" ~ "5E",
+                                 soil_tag == "7-ITS97Mar29" ~ "97",
+                                 soil_tag == "65-Mar29-8ul" ~ "65",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+  
+
+
+
+
+composition_16S <- axes_16S %>% 
+  left_join(shannon_16S)
+
+
+composition_ITS <- axes_ITS %>% 
+  left_join(shannon_ITS)
+
+composition_df <- bind_rows(composition_16S, composition_ITS) %>% 
+  select(-sample_id) %>% 
+  pivot_wider(names_from = amplicon, values_from = c(Dim1, Dim2, shannon_diversity))
+
+write_csv(composition_df, "30bald_composition_metrics.csv")
+
+
+# old stuff
+
+
 
 
 
