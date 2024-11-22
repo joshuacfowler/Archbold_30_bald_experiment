@@ -20,23 +20,19 @@ extraction_key <- readxl::read_xlsx(path = paste0(path,"/30-Bald-libraryprep_sam
 
 # loading in assigned taxonomy based on unite classifier for fungi and silva classifier for bacteria
 taxonomy_ITS.97 <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_97_ITS.tsv" )) %>% 
-  mutate(clustering = "97", amplicon = "ITS")
+  mutate(clustering = "97", amplicon = "ITS") %>% rename(feature = `Feature ID`)
 taxonomy_ITS.99 <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_99_ITS.tsv" ))%>% 
-  mutate(clustering = "99", amplicon = "ITS")
+  mutate(clustering = "99", amplicon = "ITS") %>% rename(feature = `Feature ID`)
 taxonomy_ITS.ESV <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_ESV_ITS.tsv" ))%>% 
-  mutate(clustering = "ESV", amplicon = "ITS")
+  mutate(clustering = "ESV", amplicon = "ITS") %>% rename(feature = `Feature ID`)
 taxonomy_16S.97 <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_97_16S.tsv" ))%>% 
-  mutate(clustering = "97", amplicon = "16S")
+  mutate(clustering = "97", amplicon = "16S") %>% rename(feature = `Feature ID`)
 taxonomy_16S.99 <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_99_16S.tsv" ))%>% 
-  mutate(clustering = "99", amplicon = "16S")
+  mutate(clustering = "99", amplicon = "16S") %>% rename(feature = `Feature ID`)
 taxonomy_16S.ESV <- read_tsv(file = paste0(path,"/Processed_amplicon_microbiome_data", "/taxonomy_ESV_16S.tsv" ))%>% 
-  mutate(clustering = "ESV", amplicon = "16S")
+  mutate(clustering = "ESV", amplicon = "16S") %>% rename(feature = `Feature ID`)
 
 
-
-taxonomy_df <- bind_rows(taxonomy_ITS.97, taxonomy_ITS.99, taxonomy_ITS.ESV,
-                        taxonomy_16S.97, taxonomy_16S.99, taxonomy_16S.ESV) %>% 
-  separate(Taxon, into = c(taxonomy), sep = ";") %>% mutate(across(taxonomy, ~ word(.x, 2, sep = fixed("__"))))
 
 
 
@@ -121,13 +117,13 @@ plot_rare_ITS.97
 
 # calculating rarefied datasets to 2000 sequencing
 
-rare_16S.ESV <- Rarefy(community.matrix(featuretable_16S.ESV), depth = 1000) 
-rare_16S.99 <- Rarefy(community.matrix(featuretable_16S.99), depth = 1000) 
-rare_16S.97 <- Rarefy(community.matrix(featuretable_16S.97), depth = 1000) 
+rare_16S.ESV <- Rarefy(community.matrix(featuretable_16S.ESV), depth = 2500) 
+rare_16S.99 <- Rarefy(community.matrix(featuretable_16S.99), depth = 2500) 
+rare_16S.97 <- Rarefy(community.matrix(featuretable_16S.97), depth = 2500) 
 
-rare_ITS.ESV <- Rarefy(community.matrix(featuretable_ITS.ESV), depth = 500) 
-rare_ITS.99 <- Rarefy(community.matrix(featuretable_ITS.99), depth = 500) 
-rare_ITS.97 <- Rarefy(community.matrix(featuretable_ITS.97), depth = 500) 
+rare_ITS.ESV <- Rarefy(community.matrix(featuretable_ITS.ESV), depth = 1000) 
+rare_ITS.99 <- Rarefy(community.matrix(featuretable_ITS.99), depth = 1000) 
+rare_ITS.97 <- Rarefy(community.matrix(featuretable_ITS.97), depth = 1000) 
 
 # filtering out species that are found in the control samples
 sample_16S_list <- extraction_key %>% filter(taxa == "16S", !(Sequencing_ID %in% c("16S-Control","16S-53-control", "16S-16-1", "16S-Cont-Apr2", "16S-53-PCRcontrol", "16S-Control2","16S-53", "16S-53A", "16S-53C-Mar29", "16S-OGC"))) %>% distinct(Sequencing_ID) %>% deframe() 
@@ -229,17 +225,29 @@ axes_ITS <- as_tibble(PCOA_ITS.ESV$points, rownames = NA) %>%
 
 # Now I'm gonna calculate shannon diversity for each sample
 
-shannon_16S <- data.frame(sample_id = rownames(cleaned_16S.ESV), shannon_diversity = diversity(cleaned_16S.ESV)) %>% 
-  mutate(amplicon = substr(sample_id, 1, 3), 
-         soil_tag = substr(sample_id, 5, 100)) %>% 
+get_diversity <- function(x, clustering){
+  data.frame(sample_id = rownames(x),
+             shannon_diversity = diversity(x),
+             richness = apply(x>0, 1, sum),
+             clustering = clustering) %>% 
+    mutate(amplicon = substr(sample_id, 1, 3), 
+           soil_tag = substr(sample_id, 5, 100)) 
+}
+
+shannon_16S.ESV <- get_diversity(cleaned_16S.ESV, clustering = "ESV")
+shannon_16S.99 <- get_diversity(cleaned_16S.99, clustering = "99")
+shannon_16S.97 <- get_diversity(cleaned_16S.97, clustering = "97")
+
+shannon_16S <- bind_rows(shannon_16S.ESV, shannon_16S.99, shannon_16S.97) %>% 
   mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
                                  soil_tag == "16-0"~"16",
                                  TRUE ~ soil_tag)) %>% select(-soil_tag)
 
+shannon_ITS.ESV <- get_diversity(cleaned_ITS.ESV, clustering = "ESV")
+shannon_ITS.99 <- get_diversity(cleaned_ITS.99, clustering = "99")
+shannon_ITS.97 <- get_diversity(cleaned_ITS.97, clustering = "97") 
 
-shannon_ITS <- data.frame(sample_id = rownames(cleaned_ITS.ESV), shannon_diversity = diversity(cleaned_ITS.ESV)) %>% 
-  mutate(amplicon = substr(sample_id, 1, 3), 
-         soil_tag = substr(sample_id, 5, 100)) %>% 
+shannon_ITS <- bind_rows(shannon_ITS.ESV, shannon_ITS.99, shannon_ITS.97) %>% 
   mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
                                  soil_tag == "6E-ITS46EMar29"~"6E",
                                  soil_tag == "60-ITS160Apr2"~"160",
@@ -265,9 +273,153 @@ composition_ITS <- axes_ITS %>%
 
 composition_df <- bind_rows(composition_16S, composition_ITS) %>% 
   select(-sample_id) %>% 
-  pivot_wider(names_from = amplicon, values_from = c(Dim1, Dim2, shannon_diversity))
+  pivot_wider(names_from = amplicon, values_from = c(Dim1, Dim2, richness, shannon_diversity))
 
 write_csv(composition_df, "30bald_composition_metrics.csv")
+
+# a few plots to look at differences across sites and clustering
+composition_long <-  bind_rows(composition_16S, composition_ITS) %>% 
+  select(-sample_id) %>% 
+  pivot_longer(cols = c(Dim1, Dim2, shannon_diversity, richness), names_to = "metric", values_to = "value")
+
+ggplot(composition_long %>% filter(metric == "richness")) +
+  geom_tile(aes(x = soil_source, y = clustering, fill = value)) +
+  facet_grid(amplicon~metric, scales = "free")
+
+ggplot(composition_long %>% filter(metric == "shannon_diversity")) +
+  geom_tile(aes(x = soil_source, y = clustering, fill = value)) +
+  facet_grid(amplicon~metric, scales = "free")
+
+ggplot(composition_long %>% filter(metric == "shannon_diversity")) +
+  geom_tile(aes(x = soil_source, y = clustering, fill = value)) +
+  facet_grid(amplicon~metric, scales = "free")
+
+ggplot(composition_long %>% filter(metric == "Dim1")) +
+  geom_tile(aes(x = soil_source, y = clustering, fill = value)) +
+  facet_grid(amplicon~metric, scales = "free")
+
+ggplot(composition_long %>% filter(metric == "Dim2")) +
+  geom_tile(aes(x = soil_source, y = clustering, fill = value)) +
+  facet_grid(amplicon~metric, scales = "free")
+
+
+
+# vizualizing the taxonomy across the samples
+join_taxonomy <- function(table, taxa, clustering){
+  as_tibble(table, rownames = "sample_id") %>% 
+    mutate(soil_tag = substr(sample_id, 5, 100)) %>% 
+    pivot_longer(cols = c(-sample_id, -soil_tag), names_to = "feature", values_to = "reads") %>% 
+    left_join(taxa, relationship = "many-to-many") 
+}
+
+cleaned_taxa_16S.ESV <- join_taxonomy(cleaned_16S.ESV, taxonomy_16S.ESV) %>% 
+  mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
+                                 soil_tag == "16-0"~"16",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+cleaned_taxa_16S.99 <- join_taxonomy(cleaned_16S.99, taxonomy_16S.99)%>% 
+  mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
+                                 soil_tag == "16-0"~"16",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+cleaned_taxa_16S.97 <- join_taxonomy(cleaned_16S.97, taxonomy_16S.97) %>% 
+  mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
+                                 soil_tag == "16-0"~"16",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+
+cleaned_taxa_ITS.ESV <- join_taxonomy(cleaned_ITS.ESV, taxonomy_ITS.ESV)%>% 
+  mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
+                                 soil_tag == "6E-ITS46EMar29"~"6E",
+                                 soil_tag == "60-ITS160Apr2"~"160",
+                                 soil_tag == "ITS46E-ITS46EMar29"~"46E",
+                                 soil_tag == "ITS97-ITS97Mar29"~"97",
+                                 soil_tag == "ITS5E-ITS5EApr2"~"5E", 
+                                 soil_tag == "3C-ITS53CMar29" ~ "53",
+                                 soil_tag == "E-ITS5EApr2" ~ "5E",
+                                 soil_tag == "7-ITS97Mar29" ~ "97",
+                                 soil_tag == "65-Mar29-8ul" ~ "65",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+cleaned_taxa_ITS.99 <- join_taxonomy(cleaned_ITS.99, taxonomy_ITS.99)%>% 
+  mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
+                                 soil_tag == "6E-ITS46EMar29"~"6E",
+                                 soil_tag == "60-ITS160Apr2"~"160",
+                                 soil_tag == "ITS46E-ITS46EMar29"~"46E",
+                                 soil_tag == "ITS97-ITS97Mar29"~"97",
+                                 soil_tag == "ITS5E-ITS5EApr2"~"5E", 
+                                 soil_tag == "3C-ITS53CMar29" ~ "53",
+                                 soil_tag == "E-ITS5EApr2" ~ "5E",
+                                 soil_tag == "7-ITS97Mar29" ~ "97",
+                                 soil_tag == "65-Mar29-8ul" ~ "65",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+cleaned_taxa_ITS.97 <- join_taxonomy(cleaned_ITS.97, taxonomy_ITS.97)%>% 
+  mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
+                                 soil_tag == "6E-ITS46EMar29"~"6E",
+                                 soil_tag == "60-ITS160Apr2"~"160",
+                                 soil_tag == "ITS46E-ITS46EMar29"~"46E",
+                                 soil_tag == "ITS97-ITS97Mar29"~"97",
+                                 soil_tag == "ITS5E-ITS5EApr2"~"5E", 
+                                 soil_tag == "3C-ITS53CMar29" ~ "53",
+                                 soil_tag == "E-ITS5EApr2" ~ "5E",
+                                 soil_tag == "7-ITS97Mar29" ~ "97",
+                                 soil_tag == "65-Mar29-8ul" ~ "65",
+                                 TRUE ~ soil_tag)) %>% select(-soil_tag)
+
+
+
+
+
+
+taxonomy_df <- bind_rows(cleaned_taxa_ITS.97, cleaned_taxa_ITS.99, cleaned_taxa_ITS.ESV,
+                         cleaned_taxa_16S.97, cleaned_taxa_16S.99, cleaned_taxa_16S.ESV) %>% 
+  separate(Taxon, into = c(taxonomy), sep = ";") %>% 
+  mutate(across(all_of(taxonomy), ~ word(.x, 2, sep = fixed("__"))))
+
+abund_16S.ESV <- taxonomy_df %>% filter(amplicon == "16S" & clustering == "ESV") %>% 
+  filter(reads>0)
+
+abund_ITS.ESV <- taxonomy_df %>% filter(amplicon == "ITS" & clustering == "ESV") %>% 
+  filter(reads>0)
+
+
+
+ggplot(abund_16S.ESV)+
+  geom_bar(aes(x = soil_source, y = reads, fill = Phylum), stat = "identity")+
+  theme_minimal() +theme(axis.text.x = element_text(hjust = 1, angle = 45))
+
+
+ggplot(abund_ITS.ESV)+
+  geom_bar(aes(x = soil_source, y = reads, fill = Phylum), stat = "identity")+
+  theme_minimal() + theme(axis.text.x = element_text(hjust = 1, angle = 45))
+
+
+
+# plotting just the top 5 most abundant
+top5_16S.ESV <- abund_16S.ESV %>% 
+  group_by(soil_source, sample_id) %>% 
+  slice_max(order_by = reads, n = 5)
+
+
+
+top5_ITS.ESV <- abund_ITS.ESV %>% 
+  group_by(soil_source, sample_id) %>% 
+  slice_max(order_by = reads, n = 5)
+
+ggplot(top5_16S.ESV)+
+  geom_bar(aes(x = soil_source, y = reads, fill = Family), stat = "identity")+
+  theme_minimal() +theme(axis.text.x = element_text(hjust = 1, angle = 45))
+
+
+ggplot(top5_ITS.ESV)+
+  geom_bar(aes(x = soil_source, y = reads, fill = Family), stat = "identity")+
+  theme_minimal() + theme(axis.text.x = element_text(hjust = 1, angle = 45))
+
+
+
+
+
+
+
+
+
+
 
 
 # old stuff
