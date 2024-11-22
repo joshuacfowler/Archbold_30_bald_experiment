@@ -8,6 +8,9 @@ library(lubridate)
 library(lme4)
 library(brms)
 library(rstan)
+library(terra)
+library(sf)
+library(ggmap)
 
 
 
@@ -195,6 +198,8 @@ my_palette <- c("#000000", "#E69F00", "#009E73")
 ################################################################################
 ######### Regressions of germination rate with environmental covariates ########
 ################################################################################
+germ.m <- lm(TotalGerm ~ 1+live_sterile, data = germ.covariates)
+summary(germ.m)
 
 # starting first with a model without environmental covariates
 # germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code* live_sterile, data = germ.covariates,
@@ -234,10 +239,10 @@ germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_ele
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                             rel_elev = c(median(germ.covariates$rel_elev)), time_since_fire = seq(min(germ.covariates$time_since_fire, na.rm = T), max(germ.covariates$time_since_fire, na.rm = T), by = .2))
+                             rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), time_since_fire = seq(min(germ.covariates$time_since_fire, na.rm = T), max(germ.covariates$time_since_fire, na.rm = T), by = .2))
 
 prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), 
-                             rel_elev = seq(min(germ.covariates$rel_elev), max(germ.covariates$rel_elev), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)))
+                             rel_elev = seq(min(germ.covariates$rel_elev, na.rm = T), max(germ.covariates$rel_elev, na.rm = T), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)))
 
 
 preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)
@@ -276,7 +281,7 @@ germ_plot.1 <- ggplot(data = prediction_df.1)+
   geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) + labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
+  facet_wrap(~spp_code, scales = "free") + labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
 
 germ_plot.1
 
@@ -322,23 +327,52 @@ bald_pred_wide<- bald_pred_df %>%
   pivot_wider(names_from = live_sterile, values_from = posterior ) %>% 
   mutate(rel_diff = ((sterile-live)/sterile))
 
-write_csv(bald_pred_wide, "germ_30bald_predictions.csv")
-
-bald_pred_summary <- bald_pred_wide %>% 
+# write_csv(bald_pred_wide, "germ_30bald_predictions.csv")
+bald_pred_wide <- read_csv("germ_30bald_predictions.csv")
+germ_bald_pred_summary <- bald_pred_wide %>% 
   group_by(spp_code, bald, rel_elev, time_since_fire) %>% 
   summarize(rel_diff_mean = mean(rel_diff))
 
-ggplot(bald_pred_summary)+
-  geom_point(aes(y = rel_diff_mean, x = bald))+
-  facet_wrap(~spp_code, scales = "free")
+# ggplot(bald_pred_summary)+
+#   geom_point(aes(y = rel_diff_mean, x = bald))+
+#   facet_wrap(~spp_code, scales = "free")
+# 
+# ggplot(bald_pred_summary)+
+#   geom_point(aes(y = rel_diff_mean, x = rel_elev))+
+#   facet_wrap(~spp_code)
 
-ggplot(bald_pred_summary)+
-  geom_point(aes(y = rel_diff_mean, x = rel_elev))+
-  facet_wrap(~spp_code)
-
-
+# making a map
+# merging these with lat-lon coordinates
+bald_coords <- read_csv("~/Dropbox/UofMiami/Experiment Set up/ABS-bald coordinates_UTM + latlong.csv")  %>% 
+  mutate(bald = case_when(bald_code == "02"~ "2",
+                          bald_code == "01N"~"1N",
+                          bald_code == "07N"~"7N",
+                          bald_code == "05E"~"5E",
+                          bald_code == "35N"~"35",
+                          bald_code == "65E"~"65",
+                          TRUE~bald_code))
+germ_bald_pred_coords <- germ_bald_pred_summary %>% 
+  left_join(bald_coords, by = join_by(bald == bald  )) %>% 
+  filter(spp_code == "ERYCUN")
 
   
+# library(ggmap)
+register_google("") # AIzaSyB6JPEbC-deaZ5OpJc4vagnLm7v-69RmkM
+# 
+center_point <-  c(mean(bald_coords$longitude), mean(bald_coords$latitude))
+
+archbold_satellite <- get_googlemap(center = center_point, zoom = 12, source = 'google',maptype = "satellite")
+
+germ_Archbold_survey_map <- ggplot()+#ggmap(archbold_satellite)+
+  geom_point(data = germ_bald_pred_coords, aes(x = longitude, y = latitude, fill = -rel_diff_mean, size = (-rel_diff_mean)),  size = 3, shape = 21, alpha = .8)+
+  # coord_sf(xlim = c(min(bald_pred_coords$longitude)-.01,max(bald_pred_coords$longitude) + .01), ylim = c(min(bald_pred_coords$latitude)-.01,max(bald_pred_coords$latitude) + .01))+
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red")+
+  theme_light()+
+  guides(size = "none")+
+  labs(title = "Germination", x = "Longitude", y = "Latitude", fill = "Microbial Effect")
+
+germ_Archbold_survey_map
+ggsave(germ_Archbold_survey_map, filename = "germ_Archbold_survey_map.png", width = 5, height = 6)
 
 # preddata$fit <- bald_prediction[,"Estimate"]
 # preddata$lwr <- bald_prediction[,"Q2.5"]
@@ -366,10 +400,10 @@ grow.m <- brm(log_finalSize ~ -1 + spp_code*live_sterile*rel_elev + spp_code*liv
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(grow_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(grow_data$live_sterile),
-                               rel_elev = c(median(grow_data$rel_elev)), fire_frequency = seq(min(grow_data$fire_frequency), max(grow_data$fire_frequency), by = .2))
+                               rel_elev = c(median(grow_data$rel_elev,na.rm = T)), time_since_fire = seq(min(grow_data$time_since_fire,na.rm = T), max(grow_data$time_since_fire,na.rm = T), by = .2))
 
 prediction_df.2 <- expand.grid(spp_code = unique(grow_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(grow_data$live_sterile), 
-                               rel_elev = seq(min(grow_data$rel_elev), max(grow_data$rel_elev), by = .2), fire_frequency = c(median(grow_data$fire_frequency)))
+                               rel_elev = seq(min(grow_data$rel_elev,na.rm = T), max(grow_data$rel_elev,na.rm = T), by = .2), time_since_fire = c(median(grow_data$time_since_fire, na.rm = T)))
 
 
 preds.1 <- fitted(grow.m, newdata = prediction_df.1, re_formula = NA)
@@ -387,11 +421,11 @@ prediction_df.2$upr <- preds.2[,"Q97.5"]
 # now we can plot the model predictions
 
 grow.binned.1 <- grow_data %>% 
-  mutate(fire_bin = fire_frequency, 3) %>% 
+  mutate(fire_bin = time_since_fire, 3) %>% 
   group_by(spp_code, fire_bin,  live_sterile) %>% 
   summarize(mean_elev = mean(rel_elev, na.rm = T),
             mean_grow = mean(log_finalSize, na.rm = T),
-            mean_fire = mean(fire_frequency, na.rm = T))
+            mean_fire = mean(time_since_fire, na.rm = T))
 
 grow.binned.2 <- grow_data %>% 
   mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
@@ -403,12 +437,12 @@ grow.binned.2 <- grow_data %>%
 
 
 grow_plot.1 <- ggplot(data = prediction_df.1)+
-  geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_ribbon(aes(x = time_since_fire, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = time_since_fire, y = fit, group = live_sterile, color = live_sterile)) +
   geom_point(data = grow.binned.1, aes( x= mean_fire, y = mean_grow, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code, scales = "free_y") + labs(y = "Size") + theme_light()
+  facet_wrap(~spp_code, scales = "free") + labs(y = "Size") + theme_light()
 
 grow_plot.1
 
@@ -423,7 +457,7 @@ grow_plot.2 <- ggplot(data = prediction_df.2)+
   geom_point(data = grow.binned.2, aes( x= mean_elev, y = mean_grow, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) + labs(y = "Size") + theme_light()
+  facet_wrap(~spp_code,  scales = "free") + labs(y = "Size") + theme_light()
 
 grow_plot.2
 
@@ -450,6 +484,36 @@ bald_pred_wide<- bald_pred_df %>%
   mutate(rel_diff = ((sterile-live)/sterile))
 
 write_csv(bald_pred_wide, "grow_30bald_predictions.csv")
+
+grow_bald_pred_summary <- bald_pred_wide %>% 
+  group_by(spp_code, bald, rel_elev, time_since_fire) %>% 
+  summarize(rel_diff_mean = mean(rel_diff))
+
+grow_bald_pred_coords <- grow_bald_pred_summary %>% 
+  left_join(bald_coords, by = join_by(bald == bald  )) %>% 
+  filter(spp_code == "ERYCUN")
+
+
+# library(ggmap)
+# # register_google("")
+# 
+# center_point <-  c(mean(bald_coords$longitude), mean(bald_coords$latitude))
+# 
+# archbold_satellite <- get_googlemap(center = center_point, zoom = 12, source = 'google',
+# maptype = "satellite")
+
+grow_Archbold_survey_map <- ggplot()+#ggmap(archbold_satellite)+
+  geom_point(data = grow_bald_pred_coords, aes(x = longitude, y = latitude, fill = (-rel_diff_mean)), size = 3, shape = 21, alpha = .8)+
+  # coord_sf(xlim = c(min(bald_pred_coords$longitude)-.01,max(bald_pred_coords$longitude) + .01), ylim = c(min(bald_pred_coords$latitude)-.01,max(bald_pred_coords$latitude) + .01))+
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red")+
+  theme_light()+
+  guides(size = "none")+
+  labs(title = "Growth", x = "Longitude", y = "Latitude", fill = "Microbial Effect")
+
+grow_Archbold_survey_map
+ggsave(grow_Archbold_survey_map, filename = "grow_Archbold_survey_map.png", , width = 5, height = 6)
+
+
 ########################################################################################
 ######### Regressions of probability of flowering with environmental covariates ########
 ########################################################################################
@@ -464,10 +528,10 @@ flw.m <- brm(flw_ever ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_ster
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(flw.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(flw.covariates$live_sterile),
-                               rel_elev = c(median(flw.covariates$rel_elev)), fire_frequency = seq(min(flw.covariates$fire_frequency), max(flw.covariates$fire_frequency), by = .2))
+                               rel_elev = c(median(flw.covariates$rel_elev, na.rm = T)), time_since_fire = seq(min(flw.covariates$time_since_fire, na.rm = T), max(flw.covariates$time_since_fire , na.rm = T), by = .2))
 
 prediction_df.2 <- expand.grid(spp_code = unique(flw.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(flw.covariates$live_sterile), 
-                               rel_elev = seq(min(flw.covariates$rel_elev), max(flw.covariates$rel_elev), by = .2), fire_frequency = c(median(flw.covariates$fire_frequency)))
+                               rel_elev = seq(min(flw.covariates$rel_elev, na.rm = T), max(flw.covariates$rel_elev, na.rm = T), by = .2), time_since_fire = c(median(flw.covariates$time_since_fire, na.rm = T)))
 
 
 preds.1 <- fitted(flw.m, newdata = prediction_df.1, re_formula = NA)
@@ -485,14 +549,14 @@ prediction_df.2$upr <- preds.2[,"Q97.5"]
 # now we can plot the model predictions
 
 flw.binned.1 <- flw.covariates %>% 
-  mutate(fire_bin = fire_frequency, 3) %>% 
+  mutate(fire_bin = round(time_since_fire)) %>% 
   group_by(spp_code, fire_bin,  live_sterile) %>% 
   summarize(mean_elev = mean(rel_elev, na.rm = T),
             mean_flw = mean(flw_ever, na.rm = T),
-            mean_fire = mean(fire_frequency, na.rm = T))
+            mean_fire = mean(time_since_fire, na.rm = T))
 
 flw.binned.2 <- flw.covariates %>% 
-  mutate(elev_bin = cut_number(rel_elev, 1)) %>% 
+  mutate(elev_bin = round(rel_elev)) %>%
   group_by(spp_code, elev_bin,  live_sterile) %>% 
   summarize(mean_elev = mean(rel_elev, na.rm = T),
             mean_flw = mean(flw_ever, na.rm = T))
@@ -501,13 +565,13 @@ flw.binned.2 <- flw.covariates %>%
 
 
 flw_plot.1 <- ggplot(data = prediction_df.1)+
-  geom_point(data = flw.covariates, aes(x = fire_frequency, y = flw_ever, color = live_sterile), position = position_jitter(width = 0.05, height =0.05), alpha = .3)+
-  geom_ribbon(aes(x = fire_frequency, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = fire_frequency, y = fit, group = live_sterile, color = live_sterile)) +
-  # geom_point(data = flw.binned.1, aes( x= mean_fire, y = mean_flw, color = live_sterile), alpha = .5)+
+  # geom_point(data = flw.covariates, aes(x = fire_frequency, y = flw_ever, color = live_sterile), position = position_jitter(width = 0.05, height =0.05), alpha = .3)+
+  geom_ribbon(aes(x = time_since_fire, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = time_since_fire, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = flw.binned.1, aes( x= mean_fire, y = mean_flw, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) + labs(y = "Flowering Probability") + theme_light()
+  facet_wrap(~spp_code, scales = "free") + labs(y = "Flowering Probability") + theme_light()
 
 flw_plot.1
 
@@ -517,13 +581,13 @@ ggsave(flw_plot.1, filename = "flw_plot_fire.png",  width = 6, height = 6)
 
 
 flw_plot.2 <- ggplot(data = prediction_df.2)+
-  geom_point(data = flw.covariates, aes(x = rel_elev, y = flw_ever, color = live_sterile), position = position_jitter(width = 0.05, height =0.05), alpha = .3)+
+  # geom_point(data = flw.covariates, aes(x = rel_elev, y = flw_ever, color = live_sterile), position = position_jitter(width = 0.05, height =0.05), alpha = .3)+
   geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
   geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
-  # geom_point(data = flw.binned.2, aes( x= mean_elev, y = mean_flw, color = live_sterile), alpha = .5)+
+  geom_point(data = flw.binned.2, aes( x= mean_elev, y = mean_flw, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) + labs(y = "Flowering Probability") + theme_light()
+  facet_wrap(~spp_code, scales = "free") + labs(y = "Flowering Probability") + theme_light()
 
 flw_plot.2
 
@@ -552,6 +616,37 @@ bald_pred_wide<- bald_pred_df %>%
          factor_change = sterile/live)
 
 write_csv(bald_pred_wide, "flw_30bald_predictions.csv")
+
+flw_bald_pred_summary <- bald_pred_wide %>% 
+  group_by(spp_code, bald, rel_elev, time_since_fire) %>% 
+  summarize(rel_diff_mean = mean(rel_diff))
+
+
+flw_bald_pred_coords <- flw_bald_pred_summary %>% 
+  left_join(bald_coords, by = join_by(bald == bald  )) %>% 
+  filter(spp_code == "ERYCUN")
+
+
+# library(ggmap)
+# # register_google("")
+# 
+# center_point <-  c(mean(bald_coords$longitude), mean(bald_coords$latitude))
+# 
+# archbold_satellite <- get_googlemap(center = center_point, zoom = 12, source = 'google',
+# maptype = "satellite")
+
+flw_Archbold_survey_map <- ggplot()+#ggmap(archbold_satellite)+
+  geom_point(data = flw_bald_pred_coords, aes(x = longitude, y = latitude, fill = -rel_diff_mean), size = 3, shape = 21,  alpha = .8)+
+  # coord_sf(xlim = c(min(bald_pred_coords$longitude)-.01,max(bald_pred_coords$longitude) + .01), ylim = c(min(bald_pred_coords$latitude)-.01,max(bald_pred_coords$latitude) + .01))+
+  # geom_vline(aes(xintercept =-81.352))+
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red")+
+  theme_light()+
+  guides(size = "none")+
+  labs(title = "Flowering Probability", x = "Longitude", y = "Latitude", fill = "Microbial Effect")
+
+flw_Archbold_survey_map
+ggsave(flw_Archbold_survey_map, filename = "flw_Archbold_survey_map.png", width = 5, height = 6)
+
 
 ########################################################################################
 ############ Regressions of size with environmental covariates ###########  
