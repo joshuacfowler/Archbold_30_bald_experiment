@@ -183,7 +183,15 @@ PCOA_ITS.ESV <- wcmdscale(d = dist_ITS.ESV, eig = T)
 PCOA_ITS.99 <- wcmdscale(d = dist_ITS.99, eig = T)
 PCOA_ITS.97 <- wcmdscale(d = dist_ITS.97, eig = T)
 
-print(PCOA_16S.ESV)
+PCOA_16S.ESV
+PCOA_16S.ESV$eig / sum(PCOA_16S.ESV$eig)
+PCOA_16S.99$eig / sum(PCOA_16S.99$eig)
+PCOA_16S.97$eig / sum(PCOA_16S.97$eig)
+
+PCOA_ITS.ESV$eig / sum(PCOA_ITS.ESV$eig)
+PCOA_ITS.99$eig / sum(PCOA_ITS.99$eig)
+PCOA_ITS.97$eig / sum(PCOA_ITS.97$eig)
+
 plot(PCOA_16S.ESV)
 plot(PCOA_16S.99)
 plot(PCOA_16S.97)
@@ -234,18 +242,18 @@ get_diversity <- function(x, clustering){
            soil_tag = substr(sample_id, 5, 100)) 
 }
 
-shannon_16S.ESV <- get_diversity(cleaned_16S.ESV, clustering = "ESV")
-shannon_16S.99 <- get_diversity(cleaned_16S.99, clustering = "99")
-shannon_16S.97 <- get_diversity(cleaned_16S.97, clustering = "97")
+shannon_16S.ESV <- get_diversity(rare_16S.ESV$otu.tab.rff, clustering = "ESV")
+shannon_16S.99 <- get_diversity(rare_16S.99$otu.tab.rff, clustering = "99")
+shannon_16S.97 <- get_diversity(rare_16S.97$otu.tab.rff, clustering = "97")
 
 shannon_16S <- bind_rows(shannon_16S.ESV, shannon_16S.99, shannon_16S.97) %>% 
   mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
                                  soil_tag == "16-0"~"16",
                                  TRUE ~ soil_tag)) %>% select(-soil_tag)
 
-shannon_ITS.ESV <- get_diversity(cleaned_ITS.ESV, clustering = "ESV")
-shannon_ITS.99 <- get_diversity(cleaned_ITS.99, clustering = "99")
-shannon_ITS.97 <- get_diversity(cleaned_ITS.97, clustering = "97") 
+shannon_ITS.ESV <- get_diversity(rare_ITS.ESV$otu.tab.rff, clustering = "ESV")
+shannon_ITS.99 <- get_diversity(rare_ITS.99$otu.tab.rff, clustering = "99")
+shannon_ITS.97 <- get_diversity(rare_ITS.97$otu.tab.rff, clustering = "97") 
 
 shannon_ITS <- bind_rows(shannon_ITS.ESV, shannon_ITS.99, shannon_ITS.97) %>% 
   mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
@@ -312,20 +320,20 @@ join_taxonomy <- function(table, taxa, clustering){
     left_join(taxa, relationship = "many-to-many") 
 }
 
-cleaned_taxa_16S.ESV <- join_taxonomy(cleaned_16S.ESV, taxonomy_16S.ESV) %>% 
+cleaned_taxa_16S.ESV <- join_taxonomy(rare_16S.ESV$otu.tab.rff, taxonomy_16S.ESV) %>% 
   mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
                                  soil_tag == "16-0"~"16",
                                  TRUE ~ soil_tag)) %>% select(-soil_tag)
-cleaned_taxa_16S.99 <- join_taxonomy(cleaned_16S.99, taxonomy_16S.99)%>% 
+cleaned_taxa_16S.99 <- join_taxonomy(rare_16S.99$otu.tab.rff, taxonomy_16S.99)%>% 
   mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
                                  soil_tag == "16-0"~"16",
                                  TRUE ~ soil_tag)) %>% select(-soil_tag)
-cleaned_taxa_16S.97 <- join_taxonomy(cleaned_16S.97, taxonomy_16S.97) %>% 
+cleaned_taxa_16S.97 <- join_taxonomy(rare_16S.97$otu.tab.rff, taxonomy_16S.97) %>% 
   mutate(soil_source = case_when(soil_tag == "94-Mar29"~"94",
                                  soil_tag == "16-0"~"16",
                                  TRUE ~ soil_tag)) %>% select(-soil_tag)
 
-cleaned_taxa_ITS.ESV <- join_taxonomy(cleaned_ITS.ESV, taxonomy_ITS.ESV)%>% 
+cleaned_taxa_ITS.ESV <- join_taxonomy(rare_ITS.ESV$otu.tab.rff, taxonomy_ITS.ESV)%>% 
   mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
                                  soil_tag == "6E-ITS46EMar29"~"6E",
                                  soil_tag == "60-ITS160Apr2"~"160",
@@ -337,7 +345,7 @@ cleaned_taxa_ITS.ESV <- join_taxonomy(cleaned_ITS.ESV, taxonomy_ITS.ESV)%>%
                                  soil_tag == "7-ITS97Mar29" ~ "97",
                                  soil_tag == "65-Mar29-8ul" ~ "65",
                                  TRUE ~ soil_tag)) %>% select(-soil_tag)
-cleaned_taxa_ITS.99 <- join_taxonomy(cleaned_ITS.99, taxonomy_ITS.99)%>% 
+cleaned_taxa_ITS.99 <- join_taxonomy(rare_ITS.99$otu.tab.rff, taxonomy_ITS.99)%>% 
   mutate(soil_source = case_when(soil_tag == "24N-Apr2"~"24N",
                                  soil_tag == "6E-ITS46EMar29"~"6E",
                                  soil_tag == "60-ITS160Apr2"~"160",
