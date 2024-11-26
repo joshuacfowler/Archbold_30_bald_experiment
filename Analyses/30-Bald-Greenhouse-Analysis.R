@@ -23,18 +23,30 @@ logit<-function(x){log(x)/(1+(x))}
 ###############################################################################################
 plants <- read_xlsx(path = "~/Dropbox/UofMiami/Archbold_30baldexperiment.xlsx", sheet = "Census", guess_max = 1048576) # guess_max makes the function look deeper in the columns to assign type
 
+microbe_composition <- read_csv(file = "30bald_composition_metrics.csv") %>% 
+  filter(clustering == 97) %>% 
+  mutate(soil_source = case_when(soil_source == "29" ~ "29E",
+                                 soil_source == "49" ~ "49W",
+                                 soil_source == "62" ~ "62N",
+                                 soil_source == "95" ~ "95S", TRUE ~ soil_source)) 
+plants_microbe <- plants %>% 
+  left_join(microbe_composition)
+
 # Summarizing the germination for each pot
-germ_census <- plants %>% 
+germ_census <- plants_microbe %>% 
   mutate(across(everything(), as.character)) %>% 
-  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted), contains("germ"), -contains("notes")) %>% 
+  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted, 
+                  Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), 
+                contains("germ"), -contains("notes")) %>% 
   # pivot_longer(cols = contains("germination"))
   pivot_longer(cols = c(contains("germ"))) %>% 
   separate(name, c("measurement", "census_number", "name")) %>% 
-  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number), names_from = c(measurement,name), values_from = value, names_repair = "minimal") 
+  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number,
+                          Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), names_from = c(measurement,name), values_from = value, names_repair = "minimal") 
 
 
 per_pot_germ <- germ_census %>% 
-  group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
+  group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding, Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS ) %>% 
   dplyr::summarize(GermCount = max(as.numeric(GermCount_measurement), na.rm = T),
                    ExtraGerm_total = sum(as.numeric(AdditGermCount_measurement), na.rm = T),
                    TotalGerm = sum(GermCount, ExtraGerm_total, na.rm = T)) %>% 
@@ -44,6 +56,8 @@ per_pot_germ <- germ_census %>%
                                TRUE ~ as.numeric(reseeding)),
          total_seeds = number_seeds + reseeding,
          seed_prop = TotalGerm/total_seeds) %>% 
+  mutate(across(c(Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), ~as.numeric(.))) %>%
+  mutate(across(c(Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), ~ case_when(is.na(.) & live_sterile == "sterile" ~ 0, TRUE ~ .))) %>% 
   filter(GermCount != -Inf) #%>% # These are the pots that have no measurements because we dropped them from the experiment 
 
 
@@ -53,13 +67,15 @@ per_pot_germ <- germ_census %>%
 
 # Summarizing the growth (final size) for each pot
 
-size_census <- plants %>% 
+size_census <- plants_microbe %>% 
   mutate(across(everything(), as.character)) %>% 
-  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted), contains("size"), -contains("notes")) %>% 
+  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted),
+                Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS, 
+                contains("size"), -contains("notes")) %>% 
   # pivot_longer(cols = contains("germination"))
   pivot_longer(cols = c(contains("size"))) %>% 
   separate(name, c("measurement", "census_number", "name")) %>% 
-  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number), names_from = c(measurement,name), values_from = value, names_repair = "minimal") %>% 
+  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number,                   Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), names_from = c(measurement,name), values_from = value, names_repair = "minimal") %>% 
   mutate(HeightSize_measurement = as.numeric(HeightSize_measurement),
          DiameterSize_measurement = as.numeric(DiameterSize_measurement))
 
@@ -70,35 +86,42 @@ per_pot_size <- size_census %>%
                           is.na(DiameterSize_measurement) ~ HeightSize_measurement,
                           TRUE ~ NA)) %>% 
   filter(census_number == 10)  %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
-  group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
+  group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding, Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS ) %>% 
   dplyr::summarize(finalHeight = HeightSize_measurement,
                    finalDiameter = DiameterSize_measurement,
                    finalSize = Size) %>% 
   ungroup() %>% 
+  mutate(across(c(Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), ~as.numeric(.))) %>% 
+  mutate(across(c(Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), ~ case_when(is.na(.) & live_sterile == "sterile" ~ 0, TRUE ~ .))) %>% 
   filter(!is.na(finalSize))
 
 
 
 
-flw_census <- plants %>% 
+flw_census <- plants_microbe %>% 
   mutate(across(everything(), as.character)) %>% 
-  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted), contains("Flw"), -contains("notes")) %>% 
+  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted), 
+                Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS,
+                contains("Flw"), -contains("notes")) %>% 
   # pivot_longer(cols = contains("germination"))
   pivot_longer(cols = c(contains("Flw"))) %>% 
   separate(name, c("measurement", "census_number", "name")) %>% 
-  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number), names_from = c(measurement,name), values_from = value, names_repair = "minimal")
+  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number,  Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), names_from = c(measurement,name), values_from = value, names_repair = "minimal")
 
 per_pot_flw_clean <- flw_census %>%  # for now just taking the final size census, although I think we could take size at earlier time points for ones that died
   group_by(pot_id, live_sterile,soil_source, rep_id, spp_code, number_seeds, reseeding) %>% 
   mutate(FLW_COUNT = as.numeric(FlwCount_measurement),
-         FLW_STATUS = case_when(FLW_COUNT >= 1 ~ 1, FLW_COUNT == 0 ~ 0, is.na(FLW_COUNT) ~ 0)) 
+         FLW_STATUS = case_when(FLW_COUNT >= 1 ~ 1, FLW_COUNT == 0 ~ 0, is.na(FLW_COUNT) ~ 0)) %>% 
+  mutate(across(c(Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), ~as.numeric(.))) %>%
+  mutate(across(c(Dim1_16S, Dim1_ITS, Dim2_16S, Dim2_ITS, richness_16S, richness_ITS, shannon_diversity_16S, shannon_diversity_ITS), ~ case_when(is.na(.) & live_sterile == "sterile" ~ 0, TRUE ~ .))) 
+  
   
   
   
 per_pot_flw_summary <- per_pot_flw_clean %>% 
   filter(FLW_STATUS == 1) %>% 
     summarize(flw_ever = as.numeric(mean(FLW_STATUS>0, na.rm = T)>0),
-            first_flw = min(FlwCount_date)) %>%  
+            first_flw = min(FlwCount_date), across()) %>%  
   filter(spp_code %in% c("BALANG", "HYPCUM", "PARCHA", "POLBAS","LECCER", "LECDEC", "ERYCUN", "CHAFAS"))
 
 
@@ -127,7 +150,11 @@ fire_summary <- fire_to2022 %>%
             fire_list = toString(unique(as.numeric(Year))),
             fire_frequency = length(unique(as.numeric(Year)))) %>% 
   ungroup() %>% 
-  add_row(Bald_U = "1S", Bald_ = 1, last_fire = NA, time_since_fire = NA, fire_list = NA, fire_frequency = 0)
+  add_row(Bald_U = "1S", Bald_ = 1, last_fire = NA, time_since_fire = NA, fire_list = NA, fire_frequency = 0) %>% 
+  mutate(fire_censored = case_when(is.na(time_since_fire) ~ "right", TRUE ~ "none"),
+         time_since_fire = case_when(fire_censored == "right" ~ 56, TRUE ~ time_since_fire)) 
+
+
 
 # Now getting the relative elevation from the old fire history file
 
@@ -147,12 +174,10 @@ elev.df <- read_xlsx(path = "~/Dropbox/UofMiami/Experiment Set up/firehistory_th
 
 bald_covariates <- fire_summary %>% 
   left_join(elev.df, by = join_by(Bald_U == bald)) %>% 
-  filter(!is.na(rel_elev), !is.na(time_since_fire)) %>% 
-  rename(bald = Bald_U)
+  rename(bald = Bald_U) 
 
 germ.covariates <- per_pot_germ %>%
-  left_join(bald_covariates, by = join_by( soil_source == bald))
-
+  left_join(bald_covariates, by = join_by( soil_source == bald)) 
 
 
 
@@ -171,6 +196,51 @@ flw.covariates <- per_pot_flw %>%
 fert.covariates <- per_pot_fert %>%
   left_join(bald_covariates, by = join_by( soil_source == bald))
 
+# looking at correlations between pcoa axes and environmental predictors
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim1_16S, x = time_since_fire))+
+  geom_smooth(aes(y = Dim1_16S, x = time_since_fire), method = "lm")
+  
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim1_ITS, x = time_since_fire))+
+  geom_smooth(aes(y = Dim1_ITS, x = time_since_fire), method = "lm")
+
+
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim2_16S, x = time_since_fire))+
+  geom_smooth(aes(y = Dim2_16S, x = time_since_fire), method = "lm")
+
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim2_ITS, x = time_since_fire))+
+  geom_smooth(aes(y = Dim2_ITS, x = time_since_fire), method = "lm")
+
+
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim1_16S, x = rel_elev))+
+  geom_smooth(aes(y = Dim1_16S, x = rel_elev), method = "lm")
+
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim1_ITS, x = rel_elev))+
+  geom_smooth(aes(y = Dim1_ITS, x = rel_elev), method = "lm")
+
+
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim2_16S, x = rel_elev))+
+  geom_smooth(aes(y = Dim2_16S, x = rel_elev), method = "lm")
+
+
+ggplot(germ.covariates)+
+  geom_point(aes(y = Dim2_ITS, x = rel_elev))+
+  geom_smooth(aes(y = Dim2_ITS, x = rel_elev), method = "lm")
+
+
 
 
 # write_csv(germ.covariates, file = "germ.covariates.csv")
@@ -187,8 +257,8 @@ set.seed(123)
 
 ## MCMC settings
 mcmc_pars <- list(
-  warmup = 1000, 
-  iter = 2500, 
+  warmup = 500, 
+  iter = 1000, 
   thin = 1, 
   chains = 3
 )
@@ -230,19 +300,55 @@ summary(germ.m)
 # 
 
 # now incorporating the environmental covariates and a random effect
+
+
+
 germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire + (1|soil_source), data = germ.covariates,
               family = binomial(link = "logit"),
               prior = c(set_prior("normal(0,1)", class = "b")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
+germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire 
+              + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S 
+              + spp_code*live_sterile*Dim1_ITS + spp_code*live_sterile*Dim2_ITS 
+              + (1|soil_source), data = germ.covariates,
+              family = binomial(link = "logit"),
+              prior = c(set_prior("normal(0,1)", class = "b")),
+              warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                             rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), time_since_fire = seq(min(germ.covariates$time_since_fire, na.rm = T), max(germ.covariates$time_since_fire, na.rm = T), by = .2))
+                             rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
+                             time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+                             Dim1_16S = seq(from = min(germ.covariates$Dim1_16S, na.rm = T), to = max(germ.covariates$Dim1_16S, na.rm = T), length.out = 10),
+                             Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+                             Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+                             Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
 
-prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), 
-                             rel_elev = seq(min(germ.covariates$rel_elev, na.rm = T), max(germ.covariates$rel_elev, na.rm = T), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)))
+prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+                               rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
+                               time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+                               Dim2_16S = seq(from = min(germ.covariates$Dim2_16S, na.rm = T), to = max(germ.covariates$Dim2_16S, na.rm = T), length.out = 10),
+                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+                               Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+
+prediction_df.3 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+                               rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
+                               time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+                               Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+                               Dim1_ITS = seq(from = min(germ.covariates$Dim1_ITS, na.rm = T), to = max(germ.covariates$Dim1_ITS, na.rm = T), length.out = 10),
+                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+
+prediction_df.4 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+                               rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
+                               time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+                               Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+                               Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+                               Dim2_ITS = seq(from = min(germ.covariates$Dim2_ITS, na.rm = T), to = max(germ.covariates$Dim2_ITS, na.rm = T), length.out = 10))
 
 
 preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)
@@ -256,51 +362,93 @@ prediction_df.2$fit <- preds.2[,"Estimate"]
 prediction_df.2$lwr <- preds.2[,"Q2.5"]
 prediction_df.2$upr <- preds.2[,"Q97.5"]
 
+preds.3 <- fitted(germ.m, newdata = prediction_df.3, re_formula = NA)
+prediction_df.3$fit <- preds.3[,"Estimate"]
+prediction_df.3$lwr <- preds.3[,"Q2.5"]
+prediction_df.3$upr <- preds.3[,"Q97.5"]
+
+
+preds.4 <- fitted(germ.m, newdata = prediction_df.4, re_formula = NA)
+prediction_df.4$fit <- preds.4[,"Estimate"]
+prediction_df.4$lwr <- preds.4[,"Q2.5"]
+prediction_df.4$upr <- preds.4[,"Q97.5"]
+
 
 # now we can plot the model predictions
 
-germ.binned.1 <- germ.covariates %>% 
-  mutate(fire_bin = time_since_fire, 3) %>% 
-  group_by(spp_code, fire_bin,  live_sterile) %>% 
-  summarize(mean_elev = mean(rel_elev, na.rm = T),
-            mean_germ = mean(seed_prop, na.rm = T),
-            mean_fire = mean(time_since_fire, na.rm = T))
+# germ.binned.1 <- germ.covariates %>% 
+#   mutate(fire_bin = time_since_fire, 3) %>% 
+#   group_by(spp_code, fire_bin,  live_sterile) %>% 
+#   summarize(mean_elev = mean(rel_elev, na.rm = T),
+#             mean_germ = mean(seed_prop, na.rm = T),
+#             mean_fire = mean(time_since_fire, na.rm = T))
 
-germ.binned.2 <- germ.covariates %>% 
-         mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
-  group_by(spp_code, elev_bin,  live_sterile) %>% 
-  summarize(mean_elev = mean(rel_elev, na.rm = T),
-            mean_germ = mean(seed_prop, na.rm = T))
+# germ.binned.2 <- germ.covariates %>% 
+#          mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
+#   group_by(spp_code, elev_bin,  live_sterile) %>% 
+#   summarize(mean_elev = mean(rel_elev, na.rm = T),
+#             mean_germ = mean(seed_prop, na.rm = T))
 
 
 
 
 germ_plot.1 <- ggplot(data = prediction_df.1)+
-  geom_ribbon(aes(x = time_since_fire, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = time_since_fire, y = fit, group = live_sterile, color = live_sterile)) +
-  geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
+  geom_ribbon(aes(x = Dim1_16S, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = Dim1_16S, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code, scales = "free") + labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
+  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
 
 germ_plot.1
 
 
 
-ggsave(germ_plot.1, filename = "germ_plot_fire.png",  width = 6, height = 6)
+ggsave(germ_plot.1, filename = "germ_plot_Dim1-16S.png",  width = 6, height = 6)
 
 
 germ_plot.2 <- ggplot(data = prediction_df.2)+
-  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
-  geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  geom_ribbon(aes(x = Dim2_16S, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = Dim2_16S, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code, scales = "free") + labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
 
 germ_plot.2
 
-ggsave(germ_plot.2, filename = "germ_plot_elev.png", width = 6, height = 6)
+ggsave(germ_plot.2, filename = "germ_plot_Dim2-16S.png", width = 6, height = 6)
+
+
+
+
+germ_plot.3 <- ggplot(data = prediction_df.3)+
+  geom_ribbon(aes(x = Dim1_ITS, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = Dim1_ITS, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+
+germ_plot.3
+
+ggsave(germ_plot.3, filename = "germ_plot_Dim1-ITS.png", width = 6, height = 6)
+
+
+
+
+germ_plot.4 <- ggplot(data = prediction_df.4)+
+  geom_ribbon(aes(x = Dim2_ITS, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = Dim2_ITS, y = fit, group = live_sterile, color = live_sterile)) +
+  # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+
+germ_plot.4
+
+ggsave(germ_plot.4, filename = "germ_plot_Dim2-ITS.png", width = 6, height = 6)
+
 
 
 ##### Predictions to generate a relative effect of microbiome that we will use in population model
