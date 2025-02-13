@@ -6,14 +6,19 @@
 invlogit<-function(x){exp(x)/(1+exp(x))}
 
 # Parameter assembly function ---------------------------------------------
-make_mods <- function(grow, surv, flw, fert, head, recruit){
+
+make_mods <- function(grow, surv, flw, fert, seeds_per_stem, seed_mortality, seed_germ1, seed_germ2, seedling_surv, seedling_size){
   models <- list()
   models$grow <- grow
   models$surv <- surv
   models$flw <- flw
   models$fert <- fert
-  models$head <- head
-  models$recruit <- recruit
+  models$seeds_per_stem <- seeds_per_stem
+  models$seed_mortality <- seed_mortality
+  models$seed_germ1 <- seed_germ1
+  models$seed_germ2 <- seed_germ2  
+  models$seedling_surv <- seedling_surv
+  models$seedling_size <- seedling_size
   return(models)
 }
 make_params <- function(bald.rfx=F,year.rfx=F,year=NULL,preddata,
@@ -88,6 +93,7 @@ pxy<-function(x,y,models,params){
 
 
 
+
 fx<-function(x,models,params){
   xb<-data.frame(log_size.t = pmin(x,params$max_size))
   newdata <- merge(params$newdata, xb)
@@ -95,11 +101,63 @@ fx<-function(x,models,params){
   flw_prob <- flw_prob1+flw_prob1*params$microbe_off*params$flw_microbe$rel_diff
   flw_stem <- exp(posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,])
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
-  flw_head <- models$head
-  recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
-  seedlings <- flw_prob * flw_stem * flw_head * recruit
-  return(seedlings)
+  # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
+  recruits1 <- flw_prob * flw_stem * models$seeds_per_stem * models$seed_germ1
+
+  return(recruits1)
 }
+
+
+seed_production <- function(x,models,params){
+  xb<-data.frame(log_size.t = pmin(x,params$max_size))
+  newdata <- merge(params$newdata, xb)
+  flw_prob1 <- posterior_epred(object = models$flw, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
+  flw_prob <- flw_prob1+flw_prob1*params$microbe_off*params$flw_microbe$rel_diff
+  flw_stem <- exp(posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,])
+  # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
+  # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
+  seeds <- flw_prob * flw_stem * models$seeds_per_stem * (1-models$seed_germ1)*(1-models$seed_mortality)
+  return(seeds)
+}
+
+
+
+seed_bank <- function(models, params){
+  bank <- (1-models$seed_mortality)*(1-models$seed_germ2)                
+  return(bank)
+}
+
+
+
+# Filling out the recruitment from seed bank size distribution. Currently I am just filling these with the prediction for the minimum size, but I can do this better.
+recruit_surv <- function(models, params){
+  xb<-data.frame(log_size.t = params$min_size)
+  newdata <- merge(params$newdata, xb)
+  mu <- posterior_epred(object = models$seedling_surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
+  # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
+}
+# 
+recruit_size <- function(y,models, params){
+  xb<-data.frame(log_size.t = params$min_size)
+  newdata <- merge(params$newdata, xb)
+  pred_mu <- posterior_linpred(object = models$seedling_size, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1, dpar = c("mu"))[1,]
+  pred_sigma <- posterior_linpred(object = models$seedling_size, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1, dpar = c("sigma"))[1,]
+  grow <- dnorm(x=y, 
+                mean=pred_mu,
+                sd = exp(pred_sigma))
+  grow1 <- grow+grow*params$microbe_off*params$grow_microbe$rel_diff              
+  return(grow1)
+}
+
+p_rec_y <- function(y, models, params){
+  recruit_surv(models, params) * recruit_size(y, models, params)
+}
+
+emergence <- function(y,models, params){
+  p_rec_y(y,models, params) * models$seed_germ2
+}
+
+
 
 
 
@@ -110,12 +168,20 @@ bigmatrix<-function(params,models,matdim, extension=1){
   h <- (Ub-Lb)/matdim 
   y <- Lb + (1:matdim)*h - h/2# implementing the midpoint rule to create a vector of sizes from min to max (+ extension)
   #fertility transition
-  Fmat <- matrix(0,matdim,matdim)
-  Fmat[1,1:(matdim)]<-fx(x = y, models,params)
+  Fmat <- matrix(0,matdim+1,matdim+1) # +1 dimension for seedbank
+  
+  
+  Fmat[2:(matdim+1), 2:matdim+1]<-fx(x = y, models, params) # seeds recruiting immediately
+  Fmat[1,2:(matdim+1)] <- seed_production(x = y, models, params)
+  Fmat[1,1] <- seed_bank(models, params)
   
   #growth/survival transition
-  Tmat <-matrix(0,matdim,matdim)
-  Tmat[1:(matdim),1:(matdim)] <- h*t(outer(y,y, FUN = pxy,models=models,params=params))
+  Tmat <-matrix(0,matdim+1,matdim+1)
+  Tmat[2:(matdim+1),1] <- emergence(y,models=models,params=params)
+
+  
+  Tmat[2:(matdim+1),2:(matdim+1)] <- h*t(outer(y,y, FUN = pxy,models=models,params=params))
+  
   MPMmat<-Tmat + Fmat
   return(list(MPMmat = MPMmat, Tmat = Tmat, Fmat = Fmat))
 }

@@ -93,20 +93,10 @@ size_bounds_df <- ERYCUN%>%
             )
 
 # setting up models and params to feed in to MPM_functions
-models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.flw_status, fert = erycun.flw_stem, head = 183, recruit = .1)
-params <- make_params(bald.rfx = 1,year = 2000, 
-                      microbe = 0, 
-                      
-                      germ_microbe = germ_30bald_predictions,
-                      grow_microbe = grow_30bald_predictions,
-                      flw_microbe = flw_30bald_predictions,
-                      size_bounds = size_bounds_df)
 
-gxy(0,0,models, params)
 
-plot(fx(y, models, params))
 ####################################################################################
-###### Calculating population summaries ####################################
+###### setting up data across balds for predictions ################################
 ####################################################################################
 
 # setting up the covariates for each bald for prediction
@@ -155,15 +145,39 @@ preddata <- preddata_1 %>%
   filter(live_sterile == "live") %>% select(-live_sterile)
 # params <- make_params(bald.rfx = 10, year = NA, preddata = preddata, size_bounds = size_bounds_df)
 
+
+
+####################################################################################
+###### Calculating population summaries ####################################
+####################################################################################
+# Taking seed dynamics from Hindle et al. "The two fertility scenarios which produced dynamics best fitting to the observed population dynamics were low first year germination (c_f=0), low germination from the seed bank (c_b=0.005), and low seed mortality (d=0.3) and low first year germination (c_f=0), high germination from the seed bank (c_b=0.04), and relatively high seed mortality (d=0.7; Fig. A5). "
+models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.flw_status, fert = erycun.flw_stem, 
+                    seeds_per_stem = 183, seed_mortality = .3, seed_germ1 = 0, seed_germ2 = .005,
+                    seedling_surv = erycun.survival, seedling_size = erycun.growth)
+params <- make_params(bald.rfx = 12, year = 2000, 
+                      microbe = 0, 
+                      preddata = preddata,
+                      germ_microbe = germ_30bald_predictions,
+                      grow_microbe = grow_30bald_predictions,
+                      flw_microbe = flw_30bald_predictions,
+                      size_bounds = size_bounds_df)
+
+# gxy(0,0,models, params)
+# 
+# plot(fx(1:10, models, params))
+# 
+# 
+
+
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 100
+ndraws <- 500
 nbalds <- length(unique(preddata$bald))
 nmicrobe <- 2
 
 balds <- unique(preddata$bald)
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
 lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
-for(i in 45:ndraws){
+for(i in 1:ndraws){
   for(b in 1:nbalds){
     for(m in 1:nmicrobe){
   lambda[i,b,m] <- Re(eigen(bigmatrix(params = make_params(bald.rfx = balds[b],year = NA, 
@@ -180,6 +194,7 @@ for(i in 45:ndraws){
 }
 
 saveRDS(lambda, "lambda_microbe.Rds")
+lambda <- readRDS("lambda_microbe.Rds")
 dimnames(lambda) <- list(Iter = paste0("iter",1:ndraws), Bald = unique(preddata$bald), Microbe = c("live", "sterile"))
 # lambda
 
@@ -205,7 +220,15 @@ ggplot()+
   theme_classic()
 
 
+lambda_effect_percent <- lambda_summary %>% 
+  select(-lambda_97.5, -lambda_02.5) %>% 
+  pivot_wider(names_from = Microbe, values_from = lambda_mean) %>% 
+  dplyr::summarize(percent_change = ((live-sterile)/sterile))
 
+lambda_percent_summary <- lambda_effect_percent %>% 
+  summarize(mean_change = mean(percent_change),
+            max_change = max(percent_change),
+            min_change = min(percent_change))
 
 # plot(y,sx(y,models,params),xlab="Size",type="l",
 #      ylab="Survival Probability",lwd=12)
