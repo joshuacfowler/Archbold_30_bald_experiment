@@ -13,6 +13,8 @@ library(brms)
 library(bayesplot)
 library(tidybayes)
 
+library(popbio)
+
 library(moments) # to calculate skew
 library(patchwork) # to add ggplots together
 
@@ -170,32 +172,36 @@ params <- make_params(bald.rfx = 12, year = 2000,
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 500
+ndraws <- 250
 nbalds <- length(unique(preddata$bald))
 nmicrobe <- 2
 
 balds <- unique(preddata$bald)
+
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
 lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
-for(i in 1:ndraws){
+for(i in 144:ndraws){
   for(b in 1:nbalds){
     for(m in 1:nmicrobe){
-  lambda[i,b,m] <- Re(eigen(bigmatrix(params = make_params(bald.rfx = balds[b],year = NA, 
+  lambda[i,b,m] <- popbio::lambda(bigmatrix(params = make_params(bald.rfx = balds[b],year = NA, 
                                                            preddata = preddata, 
                                                            microbe = microbe[m],
                                                            germ_microbe = germ_30bald_predictions,
                                                            grow_microbe = grow_30bald_predictions,
                                                            flw_microbe = flw_30bald_predictions,
                                                            size_bounds = size_bounds_df), 
-                                           models = models, matdim = 25, extension = 1)$MPMmat)$values[1])
+                                           models = models, matdim = 25, extension = 1)$MPMmat)
     }
   }
   print(paste("iteration", i))
 }
 
+
 saveRDS(lambda, "lambda_microbe.Rds")
 lambda <- readRDS("lambda_microbe.Rds")
-dimnames(lambda) <- list(Iter = paste0("iter",1:ndraws), Bald = unique(preddata$bald), Microbe = c("live", "sterile"))
+dimnames(lambda) <- list(Iter = paste0("iter",1:ndraws), 
+                         Bald = unique(preddata$bald), 
+                         Microbe = c("live", "sterile"))
 # lambda
 
 # lambda_cube <- cubelyr::as.tbl_cube(lambda)

@@ -71,6 +71,7 @@ sx<-function(x,models,params){
   newdata <- merge(params$newdata, xb)
   mu <- posterior_epred(object = models$surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
+ return(mu)
 }
 
 
@@ -102,8 +103,9 @@ fx<-function(x,models,params){
   flw_stem <- exp(posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,])
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
-  recruits1 <- flw_prob * flw_stem * models$seeds_per_stem * models$seed_germ1
-
+  germination <- models$seed_germ1 + models$seed_germ1*params$microbe_off*params$germ_microbe$rel_diff
+  
+  recruits1 <- flw_prob * flw_stem * models$seeds_per_stem * germination
   return(recruits1)
 }
 
@@ -116,14 +118,15 @@ seed_production <- function(x,models,params){
   flw_stem <- exp(posterior_linpred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,])
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
-  seeds <- flw_prob * flw_stem * models$seeds_per_stem * (1-models$seed_germ1)*(1-models$seed_mortality)
+  germination <- models$seed_germ1 + models$seed_germ1*params$microbe_off*params$germ_microbe$rel_diff
+  seeds <- flw_prob * flw_stem * models$seeds_per_stem * (1-germination)*(1-models$seed_mortality)
   return(seeds)
 }
 
 
 
 seed_bank <- function(models, params){
-  bank <- (1-models$seed_mortality)*(1-models$seed_germ2)                
+  bank <- (1-models$seed_mortality)*(1-(models$seed_germ2 + models$seed_germ2*params$microbe_off*params$germ_microbe$rel_diff))             
   return(bank)
 }
 
@@ -135,6 +138,7 @@ recruit_surv <- function(models, params){
   newdata <- merge(params$newdata, xb)
   mu <- posterior_epred(object = models$seedling_surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 1)[1,]
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
+  #return(mu)
 }
 # 
 recruit_size <- function(y,models, params){
@@ -154,7 +158,7 @@ p_rec_y <- function(y, models, params){
 }
 
 emergence <- function(y,models, params){
-  p_rec_y(y,models, params) * models$seed_germ2
+  p_rec_y(y,models, params) * (models$seed_germ2 + models$seed_germ2*params$microbe_off*params$germ_microbe$rel_diff)
 }
 
 
@@ -162,9 +166,9 @@ emergence <- function(y,models, params){
 
 
 # Bigmatrix function ------------------------------------------------------
-bigmatrix<-function(params,models,matdim, extension=1){   
-  Lb <- params$min_size - extension # size range of the data, extension here adds sizes smaller than min size which accounts for probability density lost at predicted sizes smaller than our lower bound
-  Ub <- params$max_size + extension # size range of the data, extension here adds sizes larger than max size which accounts for probability density lost at predicted sizes larger than our upper bound
+bigmatrix<-function(params,models,matdim, extension=.1){   
+  Lb <- params$min_size # size range of the data, extension here adds sizes smaller than min size which accounts for probability density lost at predicted sizes smaller than our lower bound
+  Ub <- params$max_size*(1+extension) # size range of the data, extension here adds sizes larger than max size which accounts for probability density lost at predicted sizes larger than our upper bound
   h <- (Ub-Lb)/matdim 
   y <- Lb + (1:matdim)*h - h/2# implementing the midpoint rule to create a vector of sizes from min to max (+ extension)
   #fertility transition
