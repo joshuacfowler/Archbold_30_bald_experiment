@@ -76,6 +76,12 @@ CHAFLO_seedling_raw <- read_excel(path = paste0(filepath, "/JennySchafer_CHAFLO/
 PARCHA_raw <- read_excel(path = paste0(filepath, "/JennySchafer_PARCHA_ProbablySameAsArchboldsVersion/Paronychia Demography Data.xlsx"))
 
 
+
+# Reading in the data for Polygonella basiramia. This is likely Satya Witt's data, but was provided by Aaron David
+
+
+POLBAS_raw <- read_csv(file= paste0(filepath, "/UM demographic models/pb1103.csv"))
+
 ####################################################################################
 ###### Cleaning and merging together ERYCUN ########################################
 ####################################################################################
@@ -1138,6 +1144,84 @@ PARCHA <- PARCHA_dates %>%
          year.t, month.t, census_date.t,  surv.t,        
          resprout.t, age.t, flw.t, 
          length.t, width.t, height.t)
+
+
+
+
+####################################################################################
+###### Cleaning and merging together POLBAS #######################################
+####################################################################################
+# POLBAS data comes from nine study sites collected between 1996 and 2003. Data was collected two times a year (May and Nov.).
+# The data is actually pretty clear in its current form. 
+POLBAS_colnames <- c("Habitat","site", "timesincefire_2000",
+                     "transect", "quadrat", "birth_year", "first_record",
+                     "qsize",
+                     "tag",
+                     "Survival_notes;Nov2003","Diameter;Nov2003", "Length;Nov2003","Sex;Nov2003", "Flw_Stem;Nov2003",
+                     "Survival_notes;May2003",
+                     "Survival_notes;Nov2002","Diameter;Nov2002", "Length;Nov2002","Flw_Stem;Nov2002","Sex2002", 
+                     "Survival_notes;May2002",
+                     "Survival_notes;Nov2001","Survival_notes_copy;Nov2001","Diameter;Nov2001", "Length;Nov2001","Flw_Stem;Nov2001","Sex;Nov2001", 
+                     "Survival_notes;May2001","Survival_notes_copy;May2001",
+                     "Survival_notes;Nov2000","Survival_notes_copy;Nov2000","Diameter;Nov2000", "Length;Nov2000","Flw_Stem;Nov2000","Sex;Nov2000", 
+                     "Survival_notes;May2000","Survival_notes_copy;May2000",
+                     "Survival_notes;Nov1999","Survival_notes_copy;Nov1999","Diameter;Nov1999", "Standing_height;Nov1999","Flw_Stem;Nov1999","Sex;Nov1999",
+                     "Survival_notes;May1999","Survival_notes_copy;May1999",
+                     "Survival_notes;Nov1998","Survival_notes_copy;Nov1998","Diameter;Nov1998", "Standing_height;Nov1998","Flw_Stem;Nov1998","Sex;Nov1998",
+                     "Survival_notes;Nov1997","Survival_notes_copy;Nov1997","Diameter;Nov1997", "Standing_height;Nov1997","Flw_Stem;Nov1997","Sex;Nov1997",
+                     "Survival_notes;May1997", "Survival_notes_copy;May1997",
+                     "Survival_notes;Nov1996","Survival_notes_copy;Nov1996","Diameter;Nov1996", "Standing_height;Nov1996","Flw_Stem;Nov1996","Sex;Nov1996",
+                     "stage00","stage99","stage98","stage97","stage96","lnfs00","lnfs99","lnfs98","lnfs97", 
+                     "lnfs96","chht9900","chht9899","chht9798","chht9697","size00","size99","size98","size97","size96","filter_$")
+
+POLBAS_renamed <- POLBAS_raw
+
+colnames(POLBAS_renamed) <- POLBAS_colnames
+
+POLBAS_dates <- POLBAS_renamed %>% 
+  dplyr::select(!starts_with("stage") & !starts_with("lnfs") & !starts_with("chht") &  !starts_with("size")) %>%  
+  dplyr::select(-qsize, -`filter_$`, -timesincefire_2000) %>% 
+  mutate(row_id = row_number()) %>% 
+  mutate(bald = site) %>% 
+  mutate(plant_id = paste(Habitat,site, transect, quadrat, tag, row_id, sep = "_")) %>% 
+  mutate(across(everything(), as.character) ) %>% 
+  pivot_longer(cols = !c(plant_id, bald,site, Habitat, transect, quadrat, tag, row_id, birth_year, first_record), names_to = c("measurement", "census_year"), names_sep = "(?<=[A-Za-z])(?=[0-9])") %>% 
+  mutate(census_month = case_when( grepl( "Nov", measurement) ~ 11,
+                                   grepl( "May", measurement) ~ 5),
+         measurement = str_split(measurement, ";", simplify = T)[, 1]) %>% 
+  pivot_wider(names_from = measurement, values_from = value) %>% 
+  mutate(surv = case_when(Survival_notes == "new unknown" ~ 1,
+                          Survival_notes == "new mature" ~ 1,
+                          Survival_notes == "new plant" ~ 1,
+                          Survival_notes == "seedling" ~ 1,
+                          Survival_notes == "survived" ~ 1, 
+                          Survival_notes == "Survived" ~ 1, 
+                          Survival_notes == "alive" ~ 1, 
+                          Survival_notes == "4" ~ 1,
+                          Survival_notes == "4.0" ~ 1,
+                          Survival_notes == "dead" ~ 0, 
+                          Survival_notes == "died" ~ 0, 
+                          Survival_notes == "Died" ~ 0, 
+                          Survival_notes == "previously dead" ~ NA,
+                          Survival_notes == "prev dead" ~ NA,
+                          Survival_notes == "6.0" ~ NA,
+                          Survival_notes == "tag not found" ~ NA))
+  # group_by(plant_id) %>% 
+  # mutate(birth_year = case_when(ARCHBOLD_surv == 5 | ARCHBOLD_surv == 7 ~ as.numeric(census_year)),
+  #        birth_month = case_when(ARCHBOLD_surv == 5 | ARCHBOLD_surv == 7 ~ as.numeric(census_month))) %>% 
+  # fill(birth_year, .direction = "updown") %>% 
+  # fill(birth_month, .direction = "updown") %>% 
+  # mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
+  #        census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
+  #        age = as.period(interval(birth_date, census_date))) %>% 
+  # filter(age>=0|is.na(age)) %>% 
+  # filter(ARCHBOLD_surv != 9 & ARCHBOLD_surv !=2 & ARCHBOLD_surv !=8)
+
+
+# POLBAS_sex_summary <- POLBAS_dates %>% 
+#   group_by(plant_id) %>% 
+#   summarize(sex_list = (unique(Sex)),
+#             sex_count = length(unique(Sex)))
 
 
 ####################################################################################
