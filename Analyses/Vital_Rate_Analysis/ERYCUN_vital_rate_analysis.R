@@ -74,15 +74,28 @@ ERYCUN <- ERYCUN_covariates %>%
 ####################################################################################
 # ERYCUN
 
-ERYCUN_surv.df <- ERYCUN %>% 
+ERYCUN_seedling_surv.df <- ERYCUN %>% 
+  filter(ARCHBOLD_surv == 5) %>% 
   filter(!is.na(surv.t1) & !is.na(log_size.t)) 
+ERYCUN_seedling_grow.df <- ERYCUN %>% 
+  filter(!is.na(ros_diameter.t1) & !is.na(log_size.t)) 
+
+
+ERYCUN_surv.df <- ERYCUN %>% 
+  filter(ARCHBOLD_surv == 5) %>% 
+  filter(!is.na(surv.t1) & !is.na(log_size.t)) 
+
 ERYCUN_flw_status.df <- ERYCUN %>% 
+  filter(ARCHBOLD_surv != 5) %>% 
   filter(!is.na(flw_status.t) & !is.na(log_size.t)) 
 ERYCUN_flw_stem.df <- ERYCUN %>% 
+  filter(ARCHBOLD_surv != 5) %>% 
   filter(flw_status.t == 1 & !is.na(flw_stem.t) & flw_stem.t !=0 & !is.na(log_size.t))
 ERYCUN_flw_head.df <- ERYCUN %>% 
+  filter(ARCHBOLD_surv != 5) %>% 
   filter(flw_status.t == 1 & !is.na(flw_head.t) & flw_head.t>0 & !is.na(log_size.t))
 ERYCUN_growth.df <- ERYCUN %>% 
+  filter(ARCHBOLD_surv != 5) %>% 
   filter(!is.na(ros_diameter.t1) & !is.na(log_size.t)) 
 
 
