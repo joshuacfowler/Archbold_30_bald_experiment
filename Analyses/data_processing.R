@@ -10,7 +10,7 @@
 # # renv::init()
 # # renv::snapshot()
 # renv::restore()
-
+ 
 
 library(tidyverse)
 library(readxl)
@@ -79,8 +79,13 @@ PARCHA_raw <- read_excel(path = paste0(filepath, "/JennySchafer_PARCHA_ProbablyS
 
 # Reading in the data for Polygonella basiramia. This is likely Satya Witt's data, but was provided by Aaron David
 
-
 POLBAS_raw <- read_csv(file= paste0(filepath, "/UM demographic models/pb1103.csv"))
+
+
+
+# Reading in the data for Hypericum cumulicola. This is data provided by Aaron David. Majority of data collection led by Pedro Quintana-Ascenscio
+HYPCUM_raw <- read_excel(path = paste0(filepath, "/UM demographic models/hcdem_ABS_2022.xlsx"), sheet = "hcdem_ABS_2022", col_types = "text")
+
 
 ####################################################################################
 ###### Cleaning and merging together ERYCUN ########################################
@@ -1159,7 +1164,7 @@ POLBAS_colnames <- c("Habitat","site", "timesincefire_2000",
                      "tag",
                      "Survival_notes;Nov2003","Diameter;Nov2003", "Length;Nov2003","Sex;Nov2003", "Flw_Stem;Nov2003",
                      "Survival_notes;May2003",
-                     "Survival_notes;Nov2002","Diameter;Nov2002", "Length;Nov2002","Flw_Stem;Nov2002","Sex2002", 
+                     "Survival_notes;Nov2002","Diameter;Nov2002", "Length;Nov2002","Flw_Stem;Nov2002","Sex;Nov2002", 
                      "Survival_notes;May2002",
                      "Survival_notes;Nov2001","Survival_notes_copy;Nov2001","Diameter;Nov2001", "Length;Nov2001","Flw_Stem;Nov2001","Sex;Nov2001", 
                      "Survival_notes;May2001","Survival_notes_copy;May2001",
@@ -1188,9 +1193,10 @@ POLBAS_dates <- POLBAS_renamed %>%
   pivot_longer(cols = !c(plant_id, bald,site, Habitat, transect, quadrat, tag, row_id, birth_year, first_record), names_to = c("measurement", "census_year"), names_sep = "(?<=[A-Za-z])(?=[0-9])") %>% 
   mutate(census_month = case_when( grepl( "Nov", measurement) ~ 11,
                                    grepl( "May", measurement) ~ 5),
-         measurement = str_split(measurement, ";", simplify = T)[, 1]) %>% 
+         measurement = str_split(measurement, ";", simplify = T)[, 1])  %>% 
   pivot_wider(names_from = measurement, values_from = value) %>% 
-  mutate(surv = case_when(Survival_notes == "new unknown" ~ 1,
+  mutate(surv_biannual = case_when(Survival_notes == "new unknown" ~ 1,
+                          Survival_notes == "new seedling" ~ 1,
                           Survival_notes == "new mature" ~ 1,
                           Survival_notes == "new plant" ~ 1,
                           Survival_notes == "seedling" ~ 1,
@@ -1205,23 +1211,241 @@ POLBAS_dates <- POLBAS_renamed %>%
                           Survival_notes == "previously dead" ~ NA,
                           Survival_notes == "prev dead" ~ NA,
                           Survival_notes == "6.0" ~ NA,
-                          Survival_notes == "tag not found" ~ NA))
-  # group_by(plant_id) %>% 
-  # mutate(birth_year = case_when(ARCHBOLD_surv == 5 | ARCHBOLD_surv == 7 ~ as.numeric(census_year)),
-  #        birth_month = case_when(ARCHBOLD_surv == 5 | ARCHBOLD_surv == 7 ~ as.numeric(census_month))) %>% 
-  # fill(birth_year, .direction = "updown") %>% 
-  # fill(birth_month, .direction = "updown") %>% 
-  # mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
-  #        census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
-  #        age = as.period(interval(birth_date, census_date))) %>% 
-  # filter(age>=0|is.na(age)) %>% 
-  # filter(ARCHBOLD_surv != 9 & ARCHBOLD_surv !=2 & ARCHBOLD_surv !=8)
+                          Survival_notes == "tag not found" ~ NA)) %>% 
+# for this, I am taking only the yearly fall census, so plants that die in May are now added to the list of those that died in November
+  group_by(plant_id) %>%
+  arrange(plant_id,census_year,census_month) %>% 
+  mutate(surv = case_when(dplyr::lag(census_month, n = 1) == 5 &  dplyr::lag(surv_biannual, n = 1) == 0 & is.na(surv_biannual) ~ 0, 
+                          TRUE ~ surv_biannual)) %>% 
+  mutate(birth_year = case_when(birth_year == 0 ~ NA,
+                                Survival_notes == "new seedling" ~ census_year,
+                                Survival_notes == "seedling" ~ census_year,
+                                TRUE ~ birth_year)) %>% 
+  fill(birth_year, .direction = "updown") %>% 
+  filter(census_month == 11) %>% ungroup() 
+
+    
 
 
-# POLBAS_sex_summary <- POLBAS_dates %>% 
-#   group_by(plant_id) %>% 
+# POLBAS_age_summary <- POLBAS_dates %>%
+#   group_by(plant_id) %>%
+#   summarize(age = sum(surv))
+# 
+# 
+# 
+# POLBAS_sex_summary <- POLBAS_dates %>%
+#   group_by(plant_id) %>%
 #   summarize(sex_list = (unique(Sex)),
 #             sex_count = length(unique(Sex)))
+
+
+
+POLBAS <- POLBAS_dates %>% 
+  mutate(across(c(census_year, birth_year, surv, Length, Standing_height, Diameter), as.numeric)) %>% 
+  group_by(plant_id) %>% 
+  arrange(plant_id, census_year) %>% 
+  mutate(year.t1 = census_year,
+         surv.t1 = surv,
+         flw.t1 = Flw_Stem,
+         length.t1 = Length,
+         height.t1 = Standing_height,
+         width.t1 = Diameter,
+         age.t1 = census_year - birth_year) %>% 
+  mutate(year.t = dplyr::lag(year.t1,  n = 1, default = NA),
+         surv.t = dplyr::lag(surv.t1,  n = 1, default = NA),
+         flw.t = dplyr::lag(flw.t1,  n = 1, default = NA),
+         length.t = dplyr::lag(length.t1,  n = 1, default = NA),
+         height.t = dplyr::lag(height.t1,  n = 1, default = NA),
+         width.t = dplyr::lag(width.t1,  n = 1, default = NA),
+         age.t = dplyr::lag(age.t1, n = 1, default = NA)) %>% 
+  filter(!is.na(surv.t1)) %>% ungroup() %>% 
+  select(plant_id, bald,site, Habitat, transect, quadrat, tag, row_id, birth_year, first_record,
+         year.t1, surv.t1, age.t1, length.t1, height.t1, width.t1, 
+         year.t, surv.t, age.t1, length.t, height.t, width.t)
+
+
+
+
+####################################################################################
+###### Cleaning and merging together HYPCUM  #######################################
+####################################################################################
+# HYPCUM data comes from 14 study sites, reduced to 9 sites after 2017. Data was collected annually in August, although some earlier censuses include recruit at different time points. collected between 1995 and 2022 
+# reproductive data is messy because in some years they recorded number of reproductive structures, and in others, they only record flowering status (0/1). In some years they only did full counts for a subset of plants. At least in some cases, these are recorded within the notes for that year.
+
+HYPCUM_colnames <- c("site", "gap", "quadrat", "tag", "TP", "pulled",
+                     "ARCHBOLD_surv;Aug2022","Height;Aug2022","Stem_count;Aug2022","repro_count;Aug2022","Notes;Aug2022",
+                     "ARCHBOLD_surv;Jul2021","Height;Jul2021","Stem_count;Jul2021","repro_count;Jul2021","distance_to_Rosemary;July2021", "Notes;Jul2021",
+                     "ARCHBOLD_surv;Jul2020","Height;Jul2020","Stem_count;Jul2020","repro_count;Jul2020","Notes;Jul2020",
+                     "ARCHBOLD_surv;Jul2019", "distance_to_Rosemary;Jul2020", "cohabitants_in_20cm;Jul2020", "fire_check;Jul2020", "Height;Jul2019","Stem_count;Jul2019","Flw_count;Jul2019","Notes;Jul2019",
+                     "ARCHBOLD_surv;Jul2018","Height;Jul2018","Stem_count;Jul2018","repro_count;Jul2018",
+                     "ARCHBOLD_surv;Jul2017", "Notes;Jul2018",
+                     "filter_$", "year","Height;Jul2017", "ltreb",
+                     "Stem_count;Jul2017","Flw_count;Jul2017","Notes;Jul2017",
+                     "ARCHBOLD_surv;Jul2016","Height;Jul2016","Stem_count;Jul2016","repro_count;Jul2016","Notes;Jul2016",
+                     "ARCHBOLD_surv;Jul2015","Height;Jul2015","Stem_count;Jul2015","repro_count;Jul2015","Notes;Jul2015",
+                     "ARCHBOLD_surv;Jul2014","Height;Jul2014","Stem_count;Jul2014","repro_count;Jul2014","Notes;Jul2014",
+                     "ARCHBOLD_surv;Aug2013","Height;Aug2013","Stem_count;Aug2013","repro_count;Aug2013","Notes;Aug2013",
+                     "ARCHBOLD_surv;Aug2012","Height;Aug2012","Stem_count;Aug2012","repro_count;Aug2012","Notes;Aug2012",
+                     "ARCHBOLD_surv;Aug2011","Height;Aug2011","Stem_count;Aug2011","repro_count;Aug2011","Notes;Aug2011",
+                     "ARCHBOLD_surv;Aug2010","Height;Aug2010","Stem_count;Aug2010","repro_count;Aug2010","Notes;Aug2010",
+                     "ARCHBOLD_surv;Jul2009","Height;Jul2009","Stem_count;Jul2009","repro_count;Jul2009",
+                     "ARCHBOLD_surv;Jul2008","Height;Jul2008","Stem_count;Jul2008","repro_count;Jul2008",
+                     "ARCHBOLD_surv;Feb2008",
+                     "ARCHBOLD_surv;Aug2007","Height;Aug2007","Stem_count;Aug2007","Flw_count;Aug2007",
+                     "oldtag","burn_year", "burn97", "burn99", "burn04", "burn10", "burn15", "burn17",
+                     "Notes;Jul2009",
+                     "ARCHBOLD_surv;Feb2007",
+                     "ARCHBOLD_surv;Aug2006", "ARCHBOLD_surv;Feb2006",
+                     "ARCHBOLD_surv;Aug2005", "ARCHBOLD_surv;Feb2005",
+                     "ARCHBOLD_surv;Aug2004", "ARCHBOLD_surv;Feb2004",
+                     "ARCHBOLD_surv;Aug2003", "ARCHBOLD_surv;Feb2003",
+                     "ARCHBOLD_surv;Aug2002", "ARCHBOLD_surv;Feb2002",
+                     "ARCHBOLD_surv;Aug2001", "ARCHBOLD_surv;Feb2001",
+                     "ARCHBOLD_surv;Aug2000", "ARCHBOLD_surv;Feb2000",
+                     "ARCHBOLD_surv;Aug1999", "ARCHBOLD_surv;Feb1999",
+                     "ARCHBOLD_surv;Aug1998", "ARCHBOLD_surv;Feb1998",
+                     "ARCHBOLD_surv;Aug1997", "ARCHBOLD_surv;Feb1997",
+                     "ARCHBOLD_surv;Aug1996", "ARCHBOLD_surv;Feb1996",
+                     "ARCHBOLD_surv;Aug1995", "ARCHBOLD_surv;Feb1995",
+                     "ARCHBOLD_surv;Aug1994",
+                     "hurricane",
+                     "Height;Aug1994",
+                     "Height;Aug1995",
+                     "Height;Aug1996",
+                     "Height;Aug1997",
+                     "Height;Aug1998",
+                     "Height;Aug1999",
+                     "Height;Aug2000",
+                     "Height;Aug2001",
+                     "Height;Aug2002",
+                     "Height;Aug2003",
+                     "Height;Aug2004",
+                     "Height;Aug2005",
+                     "Height;Aug2006",
+                     "repro_count;Aug1994",
+                     "repro_count;Aug1995",
+                     "repro_count;Aug1996",
+                     "repro_count;Aug1997",
+                     "repro_count;Aug1998",
+                     "repro_count;Aug1999",
+                     "est_repro_count;Aug2000",
+                     "repro_count;Aug2000",
+                     "repro_count;Aug2001",
+                     "est_repro_count;Aug2002",
+                     "repro_count;Aug2002",
+                     "repro_count;Aug2003",
+                     "repro_count;Aug2004",
+                     "repro_count;Aug2005",
+                     "repro_count;Aug2006",
+                     "Stem_count;Aug1994",
+                     "Stem_count;Aug1995",
+                     "Stem_count;Aug1996",
+                     "Stem_count;Aug1997",
+                     "Stem_count;Aug1998",
+                     "Stem_count;Aug2000",
+                     "Stem_count;Aug2003",
+                     "Stem_count;Aug2004",
+                     "Stem_count;Aug2005",
+                     "Stem_count;Aug2006",
+                     "Distance;Aug1994",
+                     "Distance;Aug1995",
+                     "Distance;Aug1996",
+                     "Distance;Aug1997",
+                     "sum_stem_length;Aug1995",
+                     "sum_stem_length;Aug1996",
+                     "classes1994","classes1995","classes1996","classes1997","classes1998","classes1999","classes2000","classes2001",
+                     "errors",
+                     "neig0201", "neig0802", "neig0801","roseclas", "lichen03","pb03","pc03","rosdis","rosdiscl","rosesize",
+                     "oakdis", "oaksize", "herb0801",
+                     colnames(HYPCUM_raw)[194:233])
+                     
+                    
+                     
+                     
+
+HYPCUM_renamed <- HYPCUM_raw
+
+colnames(HYPCUM_renamed) <- HYPCUM_colnames
+
+
+HYPCUM_dates <- HYPCUM_renamed %>% 
+  dplyr::select(!starts_with("neig") & !starts_with("classes") & !starts_with("Distance") &
+                !starts_with("annsur") & !starts_with("agr") & !starts_with("sum_stem_length") &
+                !starts_with("burn") & !starts_with("fire_check") & !starts_with("cohabitants_in_20cm")) %>%  
+  dplyr::select(-errors, -`filter_$`, -pull, -pulled, -sc0720, 
+                -roseclas, -rosdis, -rosdiscl, -oakdis, -rosesize, -oaksize,
+                -lichen03, -pc03, -pb03, -herb0801, -hurricane, -oldtag, -ltreb, -year)  %>% 
+  mutate(`repro_count;Aug2000` = case_when(!is.na(`repro_count;Aug2000`) ~ `repro_count;Aug2000`, 
+                                                is.na(`repro_count;Aug2000`) ~ `est_repro_count;Aug2000`,
+                                           TRUE ~ NA),
+         `repro_count;Aug2000` = case_when(as.numeric(`est_repro_count;Aug2000`) >= as.numeric(`repro_count;Aug2000`) ~ `est_repro_count;Aug2000`,
+                                                TRUE ~ `repro_count;Aug2000`)) %>%   # there is something weird in the 2000 and 2002 data with two columns for reproduction. The "estimated reproduction" is more completed, and the other includes some 0/1 values, so I am keeping only the estimated values for this year.
+  dplyr::select(!starts_with("est_repro_count")) %>% 
+  mutate(row_id = row_number()) %>% 
+  mutate(bald = site) %>% 
+  mutate(plant_id = paste(bald, site, gap, quadrat, tag, TP, row_id, sep = "_")) %>% 
+  mutate(across(everything(), as.character) ) %>% 
+  pivot_longer(cols = !c(plant_id, bald,site, gap, quadrat, tag, TP, row_id), names_to = c("measurement", "census_year"), names_sep = "(?<=[A-Za-z])(?=[0-9])") %>% 
+  mutate(census_month = case_when( grepl( "Aug", measurement) ~ 8,
+                                   grepl( "Jul", measurement) ~ 7,
+                                   grepl( "Feb", measurement) ~ 2),
+         measurement = str_split(measurement, ";", simplify = T)[, 1])  %>% 
+  pivot_wider(names_from = measurement, values_from = value) %>% 
+  mutate(surv = case_when(ARCHBOLD_surv == 1 ~ 1, 
+                          ARCHBOLD_surv == 0 ~ 0,
+                          ARCHBOLD_surv == 3 ~ 1,
+                          ARCHBOLD_surv == 5 ~ 1,
+                          ARCHBOLD_surv == 9 ~ NA,
+                          ARCHBOLD_surv == 2 ~ NA,
+                          ARCHBOLD_surv == 6 ~ NA,
+                          ARCHBOLD_surv == 12 ~ NA,
+                          TRUE ~ as.numeric(ARCHBOLD_surv))) %>% 
+  group_by(plant_id) %>% 
+  # for this, I am keeping only the yearly Summer census, so plants that die in Feb are now added to the list of those that died in Aug/Jul
+  arrange(plant_id,census_year,census_month) %>% 
+  mutate(surv = case_when(dplyr::lag(census_month, n = 1) == 2 &  dplyr::lag(ARCHBOLD_surv, n = 1) == 0 & is.na(surv) ~ 0, 
+                          TRUE ~ surv)) %>% 
+  mutate(birth_year = case_when(ARCHBOLD_surv == 5 ~ census_year,
+                                ARCHBOLD_surv == 3 & Height <15 & repro_count == 0 ~ census_year,
+                                TRUE ~ NA)) %>% 
+  fill(birth_year, .direction = "updown") %>% 
+  mutate(Notes = sub("/", " ", Notes),
+         repro_count_true = case_when(repro_count >= 1 & !grepl("rep=", Notes) ~ as.numeric(repro_count), 
+                                      grepl("rep=", Notes) ~ parse_number(Notes),
+                                      repro_count == 0 ~ NA,
+                                      TRUE ~ NA),
+         repro_count_true = case_when(Notes == "rep=117+32+23=172 (1 2 subsample)" ~ 172,
+                                      Notes == "pretty sure misentered, tag in feild is 600 (not 1000) rep=257" ~ 257, 
+                                      TRUE ~ repro_count_true),
+         repro_status = case_when(repro_count == 0 & is.na(repro_count_true) ~ 0,
+                                  repro_count_true>=1 ~ 1, TRUE ~ NA),
+         repro_count_true = case_when(census_year %in% c(2004:2009, 2011, 2012, 2014) ~ NA, 
+                                      TRUE ~ repro_count_true)) %>% 
+  filter(census_month != 2) %>% ungroup() 
+
+
+
+HYPCUM <- HYPCUM_dates %>% 
+    mutate(across(c(census_year, birth_year, surv, Height, Stem_count, repro_count_true, repro_status), as.numeric)) %>% 
+    group_by(plant_id) %>% 
+    arrange(plant_id, census_year) %>% 
+    mutate(year.t1 = census_year,
+           surv.t1 = surv,
+           flw_status.t1 = repro_status,
+           flw_count.t1 = repro_count_true,
+           height.t1 = Height,
+           stem_count.t1 = Stem_count,
+           age.t1 = census_year - birth_year) %>% 
+    mutate(year.t = dplyr::lag(year.t1,  n = 1, default = NA),
+           surv.t = dplyr::lag(surv.t1,  n = 1, default = NA),
+           flw_status.t = dplyr::lag(flw_status.t1,  n = 1, default = NA),
+           flw_count.t = dplyr::lag(flw_count.t1,  n = 1, default = NA),
+           height.t = dplyr::lag(height.t1,  n = 1, default = NA),
+           stem_count.t = dplyr::lag(stem_count.t1,  n = 1, default = NA),
+           age.t = dplyr::lag(age.t1, n = 1, default = NA)) %>%
+    filter(!is.na(surv.t1)) %>% ungroup() 
+  
+
 
 
 ####################################################################################
