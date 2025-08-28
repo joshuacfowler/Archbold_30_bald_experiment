@@ -5,7 +5,7 @@
 ####################################################################################
 ##### Set up #####
 
-library(renv) # track package versions
+# library(renv) # track package versions
 # renv::record("renv@1.0.7")
 # renv::init()
 # renv::snapshot()
@@ -82,7 +82,7 @@ ERYCUN_seedling_grow.df <- ERYCUN %>%
 
 
 ERYCUN_surv.df <- ERYCUN %>% 
-  filter(ARCHBOLD_surv == 5) %>% 
+  # filter(ARCHBOLD_surv == 5) %>% 
   filter(!is.na(surv.t1) & !is.na(log_size.t)) 
 
 ERYCUN_flw_status.df <- ERYCUN %>% 
@@ -122,10 +122,13 @@ mcmc_pars <- list(
 ####################################################################################
 ### ERYCUN  ----
 # starting first with a model without environmental covariates
-erycun.survival <- brm(surv.t1~ 1 + log_size.t +I(log_size.t^2) + rel_elev + time_since_fire + (1|year.t1) + (1|bald), 
+erycun.survival <- brm(surv.t1~ 1 + s(log_size.t, bs = "tp", k = 6) + rel_elev + time_since_fire + (1|year.t1) + (1|bald), 
                        data = ERYCUN_surv.df,
                        family = "bernoulli",
-                       prior = c(set_prior("normal(0,1)", class = "b")),
+                       prior = c(set_prior("normal(0,1)", class = "b"),
+                                 set_prior("normal(0,1)", class = "Intercept"),
+                                 set_prior("normal(0,1)", class = "sd"),
+                                 set_prior("normal(0,1)", class = "sds")),
                        warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
 saveRDS(erycun.survival, "erycun.survival.rds")
@@ -165,16 +168,23 @@ stanvars <- stanvar(scode = stan_funs(name = "sinhasinh"), block = "functions")
 #                      warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
 
-formula <- bf(log_size.t1 ~ 1 + s(log_size.t, bs = "tp") + rel_elev + time_since_fire + (1|year.t1) + (1|bald),
-              sigma ~ 1 + s(log_size.t, bs = "tp"))
+formula <- bf(log_size.t1 ~ 1 + s(log_size.t, bs = "tp", k = 10) + rel_elev + time_since_fire + (1|year.t1) + (1|bald),
+              sigma ~ 1 + s(log_size.t, bs = "tp", k = 10))
 erycun.growth <- brm(formula,
                      data = ERYCUN_growth.df,
                      family = gaussian,
-                     prior = c(set_prior("normal(0,5)", class = "b"),
-                               set_prior("normal(0,5)", class = "Intercept")),
+                     prior = c(set_prior("normal(0,1)", class = "b"),
+                               set_prior("normal(0,1)", class = "Intercept"),
+                               set_prior("normal(0,1)", class = "sd"),
+                               set_prior("normal(0,1)", class = "sds"),
+                               set_prior("normal(0,1)", class = "b", dpar = "sigma"),
+                               set_prior("normal(0,1)", class = "Intercept", dpar = "sigma")),
+                     # sample_prior = "only",
                      # set_prior("cauchy(0,5)", class = "sd")),
                      #set_prior("inv_gamma(0.4, 0.3)", class = "shape")),
                      warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+pp_check(erycun.growth, ndraws = 50, type = "dens_overlay") #lims(x = c(-10,10))
+pp_check(erycun.growth, ndraws = 50, type = "stat", stat = "mean") #+ lims(x = c(-10,10))
 
 saveRDS(erycun.growth, "erycun.growth.rds")
 erycun.growth <- readRDS("erycun.growth.rds")
@@ -185,9 +195,12 @@ erycun.growth <- readRDS("erycun.growth.rds")
 ####################################################################################
 ### ERYCUN  ----
 # starting first with a model for flowering probability
-erycun.flw_status <- brm(flw_status.t~ 1 + s(log_size.t, bs = "tp") + rel_elev + time_since_fire+ (1|year.t1) + (1|bald), data = ERYCUN_flw_status.df,
+erycun.flw_status <- brm(flw_status.t~ 1 + s(log_size.t, bs = "tp", k = 6) + rel_elev + time_since_fire+ (1|year.t1) + (1|bald), data = ERYCUN_flw_status.df,
                        family = "bernoulli",
-                       prior = c(set_prior("normal(0,1)", class = "b")),
+                       prior = c(set_prior("normal(0,1)", class = "b"),
+                                 set_prior("normal(0,1)", class = "Intercept"),
+                                 set_prior("normal(0,1)", class = "sd"),
+                                 set_prior("normal(0,1)", class = "sds")),
                        warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
 
 saveRDS(erycun.flw_status, "erycun.flw_status.rds")
@@ -196,14 +209,29 @@ source('Analyses/Vital_Rate_Analysis/stan_funs.R')
 
 stanvars <- stanvar(scode = stan_funs(name = "PIG"), block = "functions")
 
+# truncation works well here in the negatibve binomial, but I need to figure out how to implement prediction! |trunc(lb = 1)
 
-erycun.flw_stem <- brm(flw_stem.t  ~ 1 + log_size.t + rel_elev + time_since_fire + (1|year.t1) + (1|bald), data = ERYCUN_flw_stem.df,
-                         family = negbinomial,
+formula <- bf(flw_stem.t | trunc(lb = 1) ~ 1 + log_size.t + rel_elev + time_since_fire + (1|year.t1) + (1|bald), decomp = "QR")
+erycun.flw_stem <- brm(formula, data = ERYCUN_flw_stem.df,
+                         family = "negbinomial",
                          # stanvars = stanvars,
-                         prior = c(set_prior("normal(0,5)", class = "b"),
-                                   set_prior( "normal(0,1)", class = "shape")),
+                         prior = c(set_prior("normal(0,.1)", class = "b"),
+                                   set_prior("normal(0,1)", class = "Intercept"),
+                                   set_prior("normal(0,.1)", class = "sd"),
+                                   set_prior("inv_gamma(4,4)", class = "shape")),
+                                   #set_prior("normal(0,1)", class = "sds")),
+                         # sample_prior = "only",
                          warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+
+pp_check(erycun.flw_stem, ndraws = 100) +xlim(0,10)
 saveRDS(erycun.flw_stem, "erycun.flw_stem.rds")
+
+
+erycun.flw_stem <- readRDS("erycun.flw_stem.rds")
+
+# currently has 3 divergent transitions
+
+
 
 # trying to implement a Poisson-inverse gaussian distribution as a mixture model of inverse gaussian and poisson in BRMS
 PIG_mix <- mixture(poisson, poisson)
@@ -211,7 +239,7 @@ prior <- c(
   prior(normal(0.5), Intercept, dpar = mu1),
   prior(normal(0,5), Intercept, dpar = mu2)
 )
-formula_mix <- bf(flw_stem.t|trunc(lb = 0) ~ 1, mu1 ~ log_size.t, mu2 ~ mu1)
+formula_mix <- bf(flw_stem.t|trunc(lb = 1) ~ 1, mu1 ~ log_size.t, mu2 ~ mu1)
 erycun.flw_stem <- brm(formula_mix, data = ERYCUN_flw_stem.df,
                        family = PIG_mix,
                        prior = prior,
@@ -250,8 +278,8 @@ size_moments_ppc <- function(data,y_name,sim, n_bins, title = NA){
     group_by(size_bin)  %>% 
     dplyr::summarize(mean_t1 = mean(y_name),
                      sd_t1 = sd(y_name),
-                     skew_t1 = skewness(y_name),
-                     kurt_t1 = kurtosis(y_name),
+                     skew_t1 = NPskewness(y_name),
+                     kurt_t1 = NPkurtosis(y_name),
                      bin_mean = mean(log_size.t),
                      bin_n = n())
   sim_moments <- bind_cols(enframe(data$log_size.t), as_tibble(t(sim))) %>%
@@ -262,8 +290,8 @@ size_moments_ppc <- function(data,y_name,sim, n_bins, title = NA){
     group_by(size_bin, post_draw) %>%
     summarize( mean_sim = mean((sim)),
                sd_sim = sd((sim)),
-               skew_sim = skewness((sim)),
-               kurt_sim = kurtosis((sim)),
+               skew_sim = NPskewness((sim)),
+               kurt_sim = NPkurtosis((sim)),
                bin_mean = mean(log_size.t),
                bin_n = n())
   sim_medians <- sim_moments %>%
@@ -302,7 +330,7 @@ ppc_dens_overlay(y = ERYCUN_surv.df$surv.t1, yrep = y_sim)
 
 mean_s_plot <-   ppc_stat(ERYCUN_surv.df$surv.t1, y_sim, stat = "mean")
 sd_s_plot <- ppc_stat(ERYCUN_surv.df$surv.t1, y_sim, stat = "sd")
-skew_s_plot <- ppc_stat(ERYCUN_surv.df$surv.t1, y_sim, stat = "NPskewness")
+skew_s_plot <- ppc_stat(ERYCUN_surv.df$surv.t1, y_sim, stat = "skewness")
 kurt_s_plot <- ppc_stat(ERYCUN_surv.df$surv.t1, y_sim, stat = "Lkurtosis")
 surv_moments <- mean_s_plot+sd_s_plot+skew_s_plot+kurt_s_plot + plot_annotation(title = "Survival")
 surv_moments
@@ -310,7 +338,7 @@ surv_moments
 
 
 ERYCUN_surv.df <- ERYCUN_surv.df %>% 
-  mutate(logsize_t = log_ros_diameter.t)
+  mutate(logsize_t = log_size.t)
 
 
 surv_size_ppc <- size_moments_ppc(data = ERYCUN_surv.df,
@@ -369,16 +397,17 @@ flw_status_size_ppc <- size_moments_ppc(data = ERYCUN_flw_status.df,
                                   y_name = "flw_status.t",
                                   sim = y_sim, 
                                   n_bins = 10, 
-                                  title = "Growth")
+                                  title = "Flowering Probability")
 flw_status_size_ppc
 
 
 
 #### flowering stem ppc ####
 
-y_sim <- posterior_predict(erycun.flw_stem, ndraws = 500)
+y_sim <- posterior_predict(erycun.flw_stem, ndraws = 100)
+# y_sim <- fitted(erycun.flw_stem, probs = c(.5))
 
-ppc_dens_overlay(y = ERYCUN_flw_stem.df$flw_stem.t, yrep = y_sim) + xlim(0,50)
+ppc_dens_overlay(y = ERYCUN_flw_stem.df$flw_stem.t, yrep = y_sim) + xlim(-0.5,10)
 
 mean_s_plot <-   ppc_stat(ERYCUN_flw_stem.df$flw_stem.t, y_sim, stat = "mean")
 sd_s_plot <- ppc_stat(ERYCUN_flw_stem.df$flw_stem.t, y_sim, stat = "sd")
@@ -393,7 +422,7 @@ flw_stem_size_ppc <- size_moments_ppc(data = ERYCUN_flw_stem.df,
                                         y_name = "flw_stem.t",
                                         sim = y_sim, 
                                         n_bins = 10, 
-                                        title = "Growth")
+                                        title = "# of Flw. Stems")
 flw_stem_size_ppc
 
 
