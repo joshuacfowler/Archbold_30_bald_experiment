@@ -31,13 +31,19 @@ logit = function(x) { log(x/(1-x)) }
 ####################################################################################
 ###### sourcing in the vital rate model objects ####################################
 ####################################################################################
-
-erycun.survival <- readRDS("erycun.survival.rds")
+erycun.survival <- readRDS("/Volumes/Macintosh HD - Data/Users/joshuacfowler/Documents/R_projects/Archbold_30_bald_experiment/erycun.survival.rds")
+# erycun.survival <- readRDS("erycun.survival.rds")
 erycun.growth <- readRDS("erycun.growth.rds")
 erycun.flw_status <- readRDS("erycun.flw_status.rds")
 erycun.flw_stem <- readRDS("erycun.flw_stem.rds")
 erycun.flw_head <- readRDS("erycun.flw_head.rds")
 
+
+surv_par <- as.data.frame(erycun.survival)
+grow_par <- as.data.frame(erycun.growth)
+flw_par <- as.data.frame(erycun.flw_status)
+flw_stem_par <- as.data.frame(erycun.flw_stem)
+erycun.flw_head <- as.data.frame(erycun.flw_head)
 
 # reading in the predicted microbial effects from the 30 bald experiment
 germ_30bald_predictions <- read_csv("germ_30bald_predictions.csv") %>% 
@@ -172,15 +178,16 @@ params <- make_params(bald.rfx = 12, year = 2000,
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 250
-nbalds <- length(unique(preddata$bald))
+ndraws <- 100
+nbalds <- 1 #length(unique(preddata$bald))
 nmicrobe <- 2
 
-balds <- unique(preddata$bald)
+balds <- "12"#unique(preddata$bald)
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
 lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
-for(i in 144:ndraws){
+
+for(i in 1:ndraws){
   for(b in 1:nbalds){
     for(m in 1:nmicrobe){
   lambda[i,b,m] <- popbio::lambda(bigmatrix(params = make_params(bald.rfx = balds[b],year = NA, 
@@ -200,7 +207,7 @@ for(i in 144:ndraws){
 saveRDS(lambda, "lambda_microbe.Rds")
 lambda <- readRDS("lambda_microbe.Rds")
 dimnames(lambda) <- list(Iter = paste0("iter",1:ndraws), 
-                         Bald = unique(preddata$bald), 
+                         Bald = "12",#unique(preddata$bald), 
                          Microbe = c("live", "sterile"))
 # lambda
 
