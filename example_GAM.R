@@ -32,30 +32,19 @@ smooth_term_contribution <- linpred_all - fixed_effects
 # 'smooth_term_contribution' is a matrix of posterior samples for the smooth term
 # Each row is a posterior draw, and each column corresponds to an observation
 # You can now calculate the mean or credible intervals for the smooth term
-<<<<<<< HEAD
-smooth_mean <- apply(smooth_term_contribution, 2, mean)
-=======
+
 smooth_mean <- apply(linpred_all, 2, mean)
->>>>>>> 8b5c852852f15ed42e216c4ac9be805a8a9c2300
 smooth_lower_ci <- apply(smooth_term_contribution, 2, quantile, probs = 0.025)
 smooth_upper_ci <- apply(smooth_term_contribution, 2, quantile, probs = 0.975)
 
 # You can now plot these results
-<<<<<<< HEAD
-plot(dat$x, smooth_mean, type = "l", 
-     main = "Smooth Term Contribution to Linear Predictor", 
-     xlab = "x", ylab = "f(x)")
-lines(dat$x, smooth_lower_ci, lty = 2)
-lines(dat$x, smooth_upper_ci, lty = 2)
 
-=======
 plot(dat$x, smooth_mean, type = "p", 
      main = "Smooth Term Contribution to Linear Predictor", 
      xlab = "x", ylab = "f(x)")
 points(dat$x, smooth_lower_ci, lty = 2)
 points(dat$x, smooth_upper_ci, lty = 2)
 dev.off()
->>>>>>> 8b5c852852f15ed42e216c4ac9be805a8a9c2300
 
 
 # Example for getting design matrix from mgcv
