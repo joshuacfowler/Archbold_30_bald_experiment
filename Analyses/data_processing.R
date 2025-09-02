@@ -619,6 +619,18 @@ LIAOHL <- LIAOHL_temp %>%
 # Many of the columns are unnamed/underneath a set of merged cells which have the date of the census. 
 # There are also several columns in the BALANG sheet that are named CF which is the code for CHAFAS, but these are typos and should be bf. I'm correcting that in the list.
 # The spreadsheet also includes separate sites, listed out vertically with their own column names. And so I am dropping those columns. The sites have slightly different dates for the germination census, but within the same months. I'm reformatting the months to make them more consistent
+# Note that there are 7 sites -> 
+# Garbaria = Bald 36 at Archbold
+# Grapevine = Bald 34 at Archbold
+# Triangle = Bald 29 at Archbold
+# Deer Bones = Bald 42 at Archbold
+# Hicoria = Bald 46 at Archbold
+# First_burn = Bald 25 at Archbold
+# site 14 = ? at Archbold reserve (property to the west of main Archbold)
+# site 23 = ? at Archbold reserve (property to the west of main Archbold)
+# site 15 = ? at Archbold reserve (property to the west of main Archbold)
+#
+# This data also contains microsite, which describes bare sand, litter, and litter under shrub. Unclear what the numbers mean.
 
 
 BALANG_colnames <- c("habitat", "site", 	"microsite",	"point",	"primary_shrub",	"secondary_shrub", "tag", 
@@ -700,7 +712,7 @@ colnames(BALANG_renamed) <- BALANG_colnames
 # Currently have the germinants as individual rows, but realizing that it is probably best just to keep the germination data separate because I don't trust that the row order actually tracks the individual plants. It's impossible to tell which of the germinants survived/died before the height measurements start to be recorded.
 
 BALANG_seedlings <- BALANG_renamed %>% 
-  filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% 
+  filter(habitat != "habitat", habitat != "2: Res") %>% mutate(habitat = case_when(habitat == "1: ABS" ~ "1", TRUE ~ habitat)) %>% # here habitat == 1 is for Archbold proper with known balds, habitat == 2 is for archbold reserve, less clear exact locations, more disturbed sites
   select(-sum,-contains("dupe"), -primary_shrub, -secondary_shrub, -contains("height")) %>%
   mutate(across(everything(), as.character)) %>% 
   pivot_longer(cols = -c(quote_bare(habitat, site, microsite, point, tag)), names_to = c("name","date"), names_pattern = "(.*)(?:[;])(.*)", values_to = "measurement") %>% 
@@ -715,6 +727,10 @@ BALANG_seedlings <- BALANG_renamed %>%
   mutate(indiv_sdlg_list = case_when(!is.na(estab_sdlg_count) & estab_sdlg_count > 0 ~ paste(1:estab_sdlg_count, collapse = ";"),
                             TRUE ~ NA),
          indiv_sdlg_birth = case_when(!is.na(new_sdlg_count) & new_sdlg_count > 0 ~ paste(1:new_sdlg_count, collapse = ";"))) %>% 
+  mutate(bald = case_when(site == "1st burn" ~ "25",
+                          site == "Grapevine" ~ "34",
+                          site == "Hicoria" ~ "46",
+                          TRUE ~ NA)) %>% 
   ungroup()
   
 # the growth data for individual plants is messy, but it is at least tracking clear individuals, so I will keep the two datasets separate. 
@@ -774,8 +790,14 @@ BALANG_growth <- BALANG_renamed %>%
   fill(birth_year, .direction = "updown") %>% 
   mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
          census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
-         age = as.period(interval(birth_date, census_date))) %>% 
-  filter(age %in% c("0S", "1y 0m 0d 0H 0M 0S")) %>% 
+         age = as.period(interval(birth_date, census_date)),
+         age_in_months = age %/% months(1)) %>% 
+  filter(age_in_months >=0) %>%
+  filter(!is.na(monthly_surv)) %>% 
+  mutate(bald = case_when(site == "1st burn" ~ "25",
+                          site == "Grapevine" ~ "34",
+                          site == "Hicoria" ~ "46",
+                          TRUE ~ NA_character_)) %>% 
   ungroup()
 # The most common birth month is April (4), so I am using that as the annual census date for now.
   # filter(birth_month == 4) %>% 
@@ -784,7 +806,7 @@ BALANG_growth <- BALANG_renamed %>%
 
   
   BALANG_surv_prob <- BALANG_growth %>% 
-    group_by(site) %>% 
+    group_by(bald) %>% 
     summarize(surv_prob = mean(age=="1y 0m 0d 0H 0M 0S"))
 
   
@@ -908,6 +930,10 @@ BALANG_growth <- BALANG_renamed %>%
     mutate(indiv_sdlg_list = case_when(!is.na(estab_sdlg_count) & estab_sdlg_count > 0 ~ paste(1:estab_sdlg_count, collapse = ";"),
                                        TRUE ~ NA),
            indiv_sdlg_birth = case_when(!is.na(new_sdlg_count) & new_sdlg_count > 0 ~ paste(1:new_sdlg_count, collapse = ";"))) %>% 
+    mutate(bald = case_when(site == "1st burn" ~ "25",
+                            site == "Grapevine" ~ "34",
+                            site == "Hicoria" ~ "46",
+                            TRUE ~ NA)) %>% 
     ungroup()
 
   
@@ -969,8 +995,14 @@ CHAFAS_growth <- CHAFAS_renamed %>%
     fill(birth_year, .direction = "updown") %>% 
     mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
            census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
-           age = as.period(interval(birth_date, census_date))) 
-    filter(age %in% c("0S", "1y 0m 0d 0H 0M 0S")) %>% 
+           age = as.period(interval(birth_date, census_date)),
+           age_in_months = age %/% months(1)) %>% 
+    filter(age_in_months >=0) %>%
+    filter(!is.na(monthly_surv)) %>% 
+    mutate(bald = case_when(site == "1st burn" ~ "25",
+                          site == "Grapevine" ~ "34",
+                          site == "Hicoria" ~ "46",
+                          TRUE ~ NA)) %>% 
     ungroup()
   
 
@@ -979,7 +1011,7 @@ CHAFAS_growth <- CHAFAS_renamed %>%
 
 
 CHAFAS_surv_prob <- CHAFAS_growth %>% 
-  group_by(site) %>% 
+  group_by(bald) %>%
   summarize(surv_prob = mean(age=="1y 0m 0d 0H 0M 0S"))
 
 
@@ -996,6 +1028,7 @@ CHAFAS_surv_prob <- CHAFAS_growth %>%
   # This data was collected by Jenny Schafer. Overall, the dataset/column names are pretty clear. One thing to note is that some plots were censused for different durations so the "survival" column reflects NA's in some cases where plants were not included in ensuing censuses
   # First I'm going to standardize the column names, then pivot longer and do a bit of clean up to clarify the survival measurements and to add NA values for the missing 2020 census
   # the first census is in June 2015, and then there is a followup census in Dec 2015. A few new plants were added during this census, But they are mostly accounted for in the 2016 census.
+  # no data collected in 2020, so can only get some survival data from that year.
   
   column_string <- c("ARCHBOLD_surv", "stem_count", "max_height", "stem_heights", "dead_stems", "flw_status", "herb", "notes")
   CHAFLO_colnames <- c("Pop_id", "Plot_id", 	"Burn_Unit",	"Habitat","YSF",	"Plant_id",
@@ -1022,37 +1055,106 @@ CHAFLO_census <- CHAFLO_renamed %>%
   mutate(across(everything(), as.character)) %>% 
   pivot_longer(cols = -c(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id), names_sep = "-", names_to = c("column_name", "verbatim_date")) %>% 
   mutate(tag_id = paste(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id, sep = "-"),
-         month = case_when(grepl( "June", verbatim_date) ~ 6,
+         census_month = case_when(grepl( "June", verbatim_date) ~ 6,
                            grepl( "July", verbatim_date) ~ 7,
                            grepl( "Dec", verbatim_date) ~ 12,
                            TRUE ~ NA),
-         year = parse_number(verbatim_date)) %>% 
+         census_year = parse_number(verbatim_date)) %>% 
   pivot_wider(names_from = column_name, values_from = value) %>% 
   separate(stem_heights, into = paste("stem_height", 1:max_stem), fill = "right") %>% 
   mutate(across(ARCHBOLD_surv:dead_stems, as.numeric)) %>% 
+  # group_by(tag_id) %>%
   mutate(surv = case_when(ARCHBOLD_surv == 1 ~ 1, 
                           ARCHBOLD_surv == 0 ~ 0,
                           ARCHBOLD_surv == 3 ~ 1,
                           ARCHBOLD_surv == 5 ~ 1,
-                          ARCHBOLD_surv == 9 ~ NA)) %>% 
-  complete(nesting(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id, tag_id), year = full_seq(year, period = 1), fill= list(NA))
+                          ARCHBOLD_surv == 9 ~ NA)) %>%
+  complete(nesting(Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id, tag_id), census_year = full_seq(census_year, period = 1), fill= list(NA)) %>% 
+  group_by(tag_id) %>% 
+  mutate(surv = case_when(census_year == 2020 & lead(surv)==1~1, TRUE ~ surv)) %>% 
+  arrange(tag_id,census_year,census_month)  %>% 
+  mutate(birth_month = case_when(is.na(dplyr::lag(surv)) & surv == 1 ~ census_month),
+         birth_year = case_when(is.na(dplyr::lag(surv)) & surv == 1 ~ census_year)) %>% 
+  fill(birth_month, .direction = "updown") %>% 
+  fill(birth_year, .direction = "updown") %>% 
+  mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
+         census_date = case_when(census_year == 2020 ~ as.Date(paste0("01","/","06","/",census_year), format = c("%d/%m/%Y")),
+                                 census_year != 2020 ~ as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y"))),
+         age = as.period(interval(birth_date, census_date)),
+         age_in_months = age %/% months(1)) %>% 
+  filter(census_date!= "2015-12-01") %>% # dropping this date, because there are no new births, and at least one of the deaths is later marked alive
+  ungroup() 
   
   
-# Looking at dec and Jun start dates
-chaflo_2015 <- CHAFLO_census %>% 
-  filter( year == 2015)
+
+CHAFLO <- CHAFLO_census %>% 
+  group_by(tag_id) %>% 
+  arrange(tag_id, census_year) %>% 
+  mutate(year.t1 = census_year,
+         surv.t1 = surv,
+         age.t1 = age,
+         age_in_months.t1 = age_in_months,
+         stem_count.t1 = stem_count,
+         max_height.t1 = max_height,
+         stem_height1.t1 = `stem_height 1`,
+         stem_height2.t1 = `stem_height 2`,
+         stem_height3.t1 = `stem_height 3`,
+         stem_height4.t1 = `stem_height 4`,
+         stem_height5.t1 = `stem_height 5`,
+         stem_height6.t1 = `stem_height 6`,
+         stem_height7.t1 = `stem_height 7`,
+         stem_height8.t1 = `stem_height 8`,
+         dead_stems.t1 = `dead_stems`,
+         flw_status.t1 = flw_status,
+         herb.t1 = herb,
+         notes.t1 = notes,
+         ) %>% 
+  mutate(year.t = dplyr::lag(year.t1, n = 1, default = NA),
+         age.t = dplyr::lag(age.t1, n = 1, default = NA),
+         age_in_months.t = dplyr::lag(age_in_months.t1, n = 1, default = NA),
+         stem_count.t = dplyr::lag(stem_count.t1, n = 1, default = NA),
+         max_height.t = dplyr::lag(max_height.t1, n = 1, default = NA),
+         stem_height1.t = dplyr::lag(stem_height1.t1, n = 1, default = NA),
+         stem_height2.t = dplyr::lag(stem_height2.t1, n = 1, default = NA),
+         stem_height3.t = dplyr::lag(stem_height3.t1, n = 1, default = NA),
+         stem_height4.t = dplyr::lag(stem_height4.t1, n = 1, default = NA),
+         stem_height5.t = dplyr::lag(stem_height5.t1, n = 1, default = NA),
+         stem_height6.t = dplyr::lag(stem_height6.t1, n = 1, default = NA),
+         stem_height7.t = dplyr::lag(stem_height7.t1, n = 1, default = NA),
+         stem_height8.t = dplyr::lag(stem_height8.t1, n = 1, default = NA),
+         dead_stems.t = dplyr::lag(dead_stems.t1, n = 1, default = NA),
+         flw_status.t = dplyr::lag(flw_status.t1, n = 1, default = NA),
+         herb.t = dplyr::lag(herb.t1, n = 1, default = NA),
+         notes.t = dplyr::lag(notes.t1, n = 1, default = NA)
+         ) %>% 
+  filter(!is.na(surv.t1)) %>% 
+  dplyr::select(tag_id, Pop_id, Plot_id, Burn_Unit, Habitat, Plant_id, census_year, verbatim_date,
+                year.t1, ARCHBOLD_surv, surv.t1, age.t1, age_in_months.t1, stem_count.t1, max_height.t1, stem_height1.t1,stem_height2.t1,stem_height3.t1,stem_height4.t1,stem_height5.t1,stem_height6.t1,stem_height7.t1,stem_height8.t1,dead_stems.t1, flw_status.t1, herb.t1,notes.t1,
+                year.t, age.t, age_in_months.t, stem_count.t, max_height.t, stem_height1.t,stem_height2.t,stem_height3.t,stem_height4.t,stem_height5.t,stem_height6.t,stem_height7.t,stem_height8.t,dead_stems.t, flw_status.t, herb.t,notes.t)
 
 
-ggplot(data = chaflo_2015) +
-  geom_histogram(aes(x = surv, fill = month, group = month), position = "dodge")
-           
-  
 
-chaflo_2015 %>% 
-  dplyr::select(tag_id, max_height, month) %>% 
-  pivot_wider(names_from = month, names_prefix = "max_height", values_from = max_height) %>% 
-ggplot() +
-  geom_jitter(aes(x = max_height6, y = max_height12), position = "dodge") + lims(x = c(0,25), y = c(0,25))
+
+
+
+
+
+
+# # Looking at dec and Jun start dates
+# chaflo_2015 <- CHAFLO_census %>% 
+#   filter( year == 2015)
+
+
+# ggplot(data = chaflo_2015) +
+#   geom_histogram(aes(x = surv, fill = month, group = month), position = "dodge")
+#            
+#   
+# 
+# chaflo_2015 %>% 
+#   dplyr::select(tag_id, max_height, month) %>% 
+#   pivot_wider(names_from = month, names_prefix = "max_height", values_from = max_height) %>% 
+# ggplot() +
+#   geom_jitter(aes(x = max_height6, y = max_height12), position = "dodge") + lims(x = c(0,25), y = c(0,25))
 
 
 
@@ -1100,14 +1202,20 @@ CHAFLO_seedling_census <- CHAFLO_seedling_renamed %>%
   mutate(year = year(mdy(date)),
          month = month(mdy(date)),
          day = day(mdy(date))) %>% 
+  mutate(tag_id = paste(Habitat, Burn_Unit, Treatment, PVC_number, sep = "-")) %>% 
   pivot_wider(names_from = column_name, values_from = value) %>% 
   mutate(across(c(ARCHBOLD_surv, height, stem_count), as.numeric)) %>% 
   arrange(PVC_number,year,month,day) %>% 
-  mutate(surv = case_when(lag(ARCHBOLD_surv, n = 1) == 0 & ARCHBOLD_surv == 0 ~ NA,
+  mutate(surv = case_when(ARCHBOLD_surv == 0 ~ 0, ARCHBOLD_surv == 1 ~ 1,
+                          lag(ARCHBOLD_surv, n = 1) == 0 & ARCHBOLD_surv == 0 ~ NA,
                           lead(ARCHBOLD_surv, n = 1) == 1 & ARCHBOLD_surv == 0 ~ NA,
                           ARCHBOLD_surv == 9 ~ NA,
                           ARCHBOLD_surv == 2 ~ NA,
-                          TRUE ~ ARCHBOLD_surv)) 
+                          TRUE ~ ARCHBOLD_surv)) %>% 
+  complete(nesting(Habitat, Burn_Unit, Treatment, PVC_number, tag_id), year = full_seq(year, period = 1), fill= list(NA)) %>% 
+  group_by(tag_id) %>% 
+  mutate(surv = case_when(year == 2020 & lead(surv)==1~1, TRUE ~ surv)) %>% ungroup()
+
 
 CHAFLO_test <- CHAFLO_seedling_census %>% 
   filter(lead(ARCHBOLD_surv, n = 1) &  ARCHBOLD_surv == 0)
@@ -1193,7 +1301,8 @@ PARCHA_dates <- PARCHA_renamed %>%
   fill(birth_month, .direction = "updown") %>% 
   mutate(birth_date = as.Date(paste0("01","/",birth_month,"/",birth_year), format = c("%d/%m/%Y")),
          census_date = as.Date(paste0("01","/",census_month,"/",census_year), format = c("%d/%m/%Y")),
-         age = as.period(interval(birth_date, census_date))) %>% 
+         age = as.period(interval(birth_date, census_date)),
+         age_in_months = age %/% months(1)) %>% 
   filter(age>=0|is.na(age)) %>% 
   filter(ARCHBOLD_surv != 9 & ARCHBOLD_surv !=2 & ARCHBOLD_surv !=8)
 
@@ -1214,6 +1323,7 @@ PARCHA <- PARCHA_dates %>%
          surv.t1 = surv,
          resprout.t1 = resprout,
          age.t1 = age,
+         age_in_months.t1 = age_in_months,
          flw.t1 = flowering,
          length.t1 = length,
          width.t1 = width,
@@ -1224,6 +1334,7 @@ PARCHA <- PARCHA_dates %>%
          surv.t = dplyr::lag(surv.t1,  n = 1, default = NA),
          resprout.t = dplyr::lag(resprout.t1,  n = 1, default = NA),
          age.t = dplyr::lag(age.t1,  n = 1, default = NA),
+         age_in_months.t = dplyr::lag(age_in_months.t1,  n = 1, default = NA),
          flw.t = dplyr::lag(flw.t1,  n = 1, default = NA),
          length.t = dplyr::lag(length.t1,  n = 1, default = NA),
          width.t = dplyr::lag(width.t1,  n = 1, default = NA),
@@ -1231,10 +1342,10 @@ PARCHA <- PARCHA_dates %>%
   filter(!is.na(surv.t1)) %>% 
   select(bald, fire_unit, gap, site, plot, tag, row_id, plant_id, 
          birth_year, birth_month, birth_date,
-         ARCHBOLD_surv, year.t1, month.t1, census_date.t1, surv.t1, resprout.t1, age.t1,
+         ARCHBOLD_surv, year.t1, month.t1, census_date.t1, surv.t1, resprout.t1, age.t1, age_in_months.t1,
          flw.t1, length.t1, width.t1 , height.t1,
          year.t, month.t, census_date.t,  surv.t,        
-         resprout.t, age.t, flw.t, 
+         resprout.t, age.t, age_in_months.t, flw.t, 
          length.t, width.t, height.t)
 
 
@@ -1618,9 +1729,10 @@ ERYCUN_covariates <- ERYCUN %>%
 # for now, we don't know if some of these balds were bald 1N or 1S, we just know Bald 1, so I'm gonna pick omang the 4 that we don't know.
 
 PARCHA_covariates <- PARCHA %>% 
-  left_join(elev.df, by = c( "bald" = "bald_simple")) %>% 
-  filter(!(bald.y %in% c("1S", "24S", "46E", "49E"))) %>% select(-bald.y) %>% 
-  left_join(fire_summary, by = c("bald" = "bald_simple")) %>% 
+  mutate(year.t1 = as.numeric(year.t1)) %>% 
+  left_join(elev.df, by = join_by(bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c("1S", "24S", "46E", "49E"))) %>% select(-bald.y) %>%
+  left_join(fire_summary, by = join_by(bald == bald_simple), relationship = "many-to-many") %>% 
   filter(!(bald.y %in% c("24S", "46E", "49E"))) %>% select(-bald.y)
 
 
@@ -1635,9 +1747,58 @@ HYPCUM_covariates <- HYPCUM %>%
 
 
 
+# CHAFLO is not easy to connect yet because sites are listed as being at burn units. there is actually good information, but I need to follow up on this
+# CHAFLO_covariates <- CHAFLO %>% 
+#
+
+
+
+
+#
+CHAFAS_covariates <- CHAFAS_growth %>% 
+  mutate(year.t1 = census_year) %>% 
+  left_join(elev.df, by = join_by( bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c("46E"))) %>% select(-bald.y) %>% 
+  left_join(fire_summary, by = join_by(bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c( "46E"))) %>% select(-bald.y)
+  
+
+
+
+#
+BALANG_covariates <- BALANG_growth %>% 
+  mutate(year.t1 = census_year) %>% 
+  left_join(elev.df, by = join_by( bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c("46E"))) %>% select(-bald.y) %>% 
+  left_join(fire_summary, by = join_by(bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c( "46E"))) %>% select(-bald.y)
+
+
+
+
+# LIAOHL will also be hard to connect to specific balds and need to follow up
+# LIAOHL_covariates <- LIAOHL %>% 
+
+
+#
+POLBAS_covariates <- POLBAS %>% 
+  mutate(year.t1 = as.numeric(year.t1)) %>% 
+  left_join(elev.df, by = join_by(bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c("29E", "46E", "95W"))) %>% select(-bald.y) %>%
+  left_join(fire_summary, by = join_by(bald == bald_simple), relationship = "many-to-many") %>% 
+  filter(!(bald.y %in% c("29E", "46E", "95W"))) %>% select(-bald.y)
+
+
+
+
+
+#
 last_fire_fx <- function(x,y){ max(as.numeric(x)[as.numeric(x)<=y])}
 fire_frequency_fx <- function(x,y){length(as.numeric(x)[as.numeric(x)<=y])/(y - 1950)}
 
+
+
+#
 ERYCUN_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(unlist(ERYCUN_covariates$fire_list), ", "), y= ERYCUN_covariates$year.t1))
 ERYCUN_covariates$time_since_fire_actual <- ERYCUN_covariates$year.t1 - ERYCUN_covariates$last_fire_actual
 ERYCUN_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(ERYCUN_covariates$fire_list), ", "), y= ERYCUN_covariates$year.t1))
@@ -1662,7 +1823,36 @@ HYPCUM_covariates$time_since_fire_actual <- HYPCUM_covariates$year.t1 - HYPCUM_c
 HYPCUM_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(HYPCUM_covariates$fire_list), ", "), y= HYPCUM_covariates$year.t1))
 
 
+#
+CHAFAS_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(unlist(paste0(CHAFAS_covariates$fire_list, ", 1950")), ", "), y= CHAFAS_covariates$year.t1))
+CHAFAS_covariates$time_since_fire_actual <- CHAFAS_covariates$year.t1 - CHAFAS_covariates$last_fire_actual
+CHAFAS_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(CHAFAS_covariates$fire_list), ", "), y= CHAFAS_covariates$year.t1))
+
+
+
+#
+BALANG_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(unlist(paste0(BALANG_covariates$fire_list, ", 1950")), ", "), y= BALANG_covariates$year.t1))
+BALANG_covariates$time_since_fire_actual <- BALANG_covariates$year.t1 - BALANG_covariates$last_fire_actual
+BALANG_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(BALANG_covariates$fire_list), ", "), y= BALANG_covariates$year.t1))
+
+
+
+
+#
+POLBAS_covariates$last_fire_actual <- unlist(Map(f = last_fire_fx, x = strsplit(unlist(paste0(POLBAS_covariates$fire_list, ", 1950")), ", "), y= POLBAS_covariates$year.t1))
+POLBAS_covariates$time_since_fire_actual <- POLBAS_covariates$year.t1 - POLBAS_covariates$last_fire_actual
+POLBAS_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(POLBAS_covariates$fire_list), ", "), y= POLBAS_covariates$year.t1))
 
 
 #########
+
+write_csv(ERYCUN_covariates, paste0(filepath,"/cleaned_data", "/ERYCUN_covariates.csv"))
+write_csv(HYPCUM_covariates, paste0(filepath,"/cleaned_data", "/HYPCUM_covariates.csv"))
+write_csv(POLBAS_covariates, paste0(filepath,"/cleaned_data", "/POLBAS_covariates.csv"))
+write_csv(BALANG_covariates, paste0(filepath,"/cleaned_data", "/BALANG_covariates.csv"))
+write_csv(CHAFAS_covariates, paste0(filepath,"/cleaned_data", "/CHAFAS_covariates.csv"))
+write_csv(PARCHA_covariates, paste0(filepath,"/cleaned_data", "/PARCHA_covariates.csv"))
+write_csv(CHAFLO, paste0(filepath,"/cleaned_data", "/CHAFLO.csv"))
+write_csv(LIAOHL, paste0(filepath,"/cleaned_data", "/LIAOHL.csv"))
+
 
