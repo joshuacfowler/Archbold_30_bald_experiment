@@ -49,7 +49,8 @@ params$newdata <- preddata
 
      if(bald %in% unique(surv_mod$data$bald)){
      bald.rfx_surv <- surv_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
-   
+     bald.rfx_surv <- grow_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
+     
      # bald.rfx_grow <- grow_par$tau_year[draw,species,(endo_var_U+1),(year)];
      # bald.rfx_flow <- flow_par$tau_year[draw,species,(endo_var_F+1),(year-repro_offset)]; # fitting 
      # bald.rfx_fert <- fert_par$tau_year[draw,species,(endo_var_F+1),(year-repro_offset)]; 
@@ -59,12 +60,16 @@ params$newdata <- preddata
      
      if(!bald %in% unique(surv_mod$data$bald)){
        bald.rfx_surv <- rnorm(n = 1, mean = 0, sd = surv_par[draw, "sd_bald__Intercept"]);
+       bald.rfx_grow <- rnorm(n = 1, mean = 0, sd = grow_par[draw, "sd_bald__Intercept"]);
+       
      }
 }
   
   params$year.t1 <- year
   params$bald <- bald
   params$bald.rfx_surv <- bald.rfx_surv
+  params$bald.rfx_grow <- bald.rfx_grow
+  
   
   
   #tack on size bounds
@@ -82,7 +87,9 @@ params$newdata <- preddata
   # surv_prep <- brms:::prepare_predictions(surv_mod, newdata = new_dat, allow_new_levels = FALSE)
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
-  
+  params$grow_fire <- grow_par[draw,"b_time_since_fire"]
+  params$grow_elev <-  grow_par[draw,"b_rel_elev"]
+  params$grow_int <- grow_par[draw,"b_Intercept"] 
   
   params$microbe_off <- microbe_off
   # params$germ_microbe <- germ_microbe
@@ -118,15 +125,20 @@ sx<-function(x,models,params){
 
 
 gxy <- function(x,y,models,params){
-  xb<-data.frame(log_size.t = pmin(x,params$max_size))
+  xb <- data.frame(log_size.t = pmin(x,params$max_size), log_size.t1 = NA_real_) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  pred_mu <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("mu"), transform = TRUE))
-  pred_sigma <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("sigma")))
+  prep <- brms:::prepare_predictions(models$grow, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  
+  int <- params$grow_int + params$grow_elev*params$newdata$rel_elev + params$grow_fire*params$newdata$time_since_fire  
+  int_1 <- int + int*params$microbe_off*params$grow_microbe$rel_diff
+  linpred <- int_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  
+  # pred_mu <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("mu"), transform = TRUE))
+  pred_sigma <- posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = draw, dpar = c("sigma"))
   grow <- dnorm(x=y, 
-                mean=pred_mu,
+                mean=linpred,
                 sd = exp(pred_sigma))
-  grow1 <- grow+grow*params$microbe_off*params$grow_microbe$rel_diff
-  return(grow1)
+  return(grow)
 }
 # matplot(t(grow), type = "l")
 # matplot(t(grow1), type = "l")
