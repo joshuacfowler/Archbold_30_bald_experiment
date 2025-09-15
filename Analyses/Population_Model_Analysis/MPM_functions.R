@@ -30,15 +30,23 @@ make_params <- function(draw = NA,
                         microbe_off=0,germ_microbe = 0, grow_microbe = 0, flw_microbe = 0,
                         size_bounds){
                         #surv_par,surv_sdlg_par,grow_par,grow_sdlg_par,flow_par,fert_par,spike_par,seed_par,recruit_par){
+params <- c()
+params$newdata <- preddata
 
   if(year.rfx==F){
-    year.rfx_surv <- year.rfx_grow <- year.rfx_flow <- year.rfx_fert <- year.rfx_spike <- year.rfx_rct <-  0}
-  
+    year.rfx_surv <- year.rfx_grow <- year.rfx_flow <- year.rfx_fert <- year.rfx_spike <- year.rfx_rct <-  0
+    params$newdata$year.t1 = NA}
+
+  if(year.rfx==T){
+    params$newdata$year.t1 <-  year}
+
   
   if(bald.rfx==F){
     bald.rfx_surv <- bald.rfx_grow <- bald.rfx_flow <- bald.rfx_fert <- bald.rfx_spike <- bald.rfx_rct <-  0}
   
   if(bald.rfx==T){
+    params$newdata <- preddata[preddata$bald == bald,]
+
      if(bald %in% unique(surv_mod$data$bald)){
      bald.rfx_surv <- surv_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
    
@@ -54,66 +62,56 @@ make_params <- function(draw = NA,
      }
 }
   
-  
-  
-  stan_data <- make_standata(surv_mod)
-  Zs <- stan_data$Zs_1_1[draw,]
-  params <- c()
-  surv_fire <- surv_par[draw,"b_time_since_fire"]*preddata$time_since_fire
-  surv_elev <-  surv_par[draw,"b_rel_elev"]*preddata$rel_elev
-  params$surv_int <- surv_par[draw,"b_Intercept"] + surv_fire + surv_elev + bald.rfx_surv + year.rfx_surv
-  # compiling GAM related parameters for size-relationship with help from BRMS helper functions
-  params$surv_slope <- surv_par[draw, "bs_slog_size.t_1"]
-  params$surv_basis <- as.matrix(surv_par[draw, c("s_slog_size.t_1[1]", "s_slog_size.t_1[2]", "s_slog_size.t_1[3]", "s_slog_size.t_1[4]")])
-  
-  params$surv_slope_matrix <- as.matrix(surv_par[draw,grep("slog_size.t", names(surv_par), value = TRUE)] )
-  
-plot(surv_mod$data$log_size.t[1:100], invlogit(params$surv_int + posterior_smooths(surv_mod, newdata = tibble(log_size.t = surv_mod$data$log_size.t[1:100]), smooth = 's(log_size.t,bs="tp",k=6)', draw_ids = c(1))*1.2))
-  # prep <- prepare_predictions(surv_mod, formula = surv_mod$formula) can give same as surv_par$slog_size.t[1] through [4]
-  # params$surv_slope_matrix <- surv_par[draw,grep("slog_size.t", names(surv_par), value = TRUE)] 
-  
   params$year.t1 <- year
   params$bald <- bald
+  params$bald.rfx_surv <- bald.rfx_surv
   
-  
-  params$microbe_off <- microbe_off
-  params$germ_microbe$rel_diff <- germ_microbe
-  params$grow_microbe$rel_diff <- grow_microbe
-  params$flw_microbe$rel_diff <- flw_microbe
-  if(is.data.frame(germ_microbe)){
-  params$germ_microbe <- germ_microbe[germ_microbe$bald == bald.rfx,]}
-  if(is.data.frame(grow_microbe)){
-  params$grow_microbe <- grow_microbe[grow_microbe$bald == bald.rfx,]}
-  if(is.data.frame(flw_microbe)){
-  params$flw_microbe <- flw_microbe[flw_microbe$bald == bald.rfx,]}
   
   #tack on size bounds
   params$max_size <- size_bounds$max_size
   params$min_size <- size_bounds$min_size
   
-  params$newdata <- preddata
-  if(bald.rfx==T){
-  params$newdata <- preddata[preddata$bald == bald,]}
+
+  
+
+
+  params$surv_fire <- surv_par[draw,"b_time_since_fire"]
+  params$surv_elev <-  surv_par[draw,"b_rel_elev"]
+  params$surv_int <- surv_par[draw,"b_Intercept"] 
+  # compiling GAM related parameters for size-relationship with help from BRMS helper functions in each function
+  # surv_prep <- brms:::prepare_predictions(surv_mod, newdata = new_dat, allow_new_levels = FALSE)
+  # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
   
-  if(year.rfx==T){
-  params$newdata$year.t1 <-  year}
+  
+  params$microbe_off <- microbe_off
+  # params$germ_microbe <- germ_microbe
+  # params$grow_microbe <- grow_microbe
+  # params$flw_microbe <- flw_microbe
+  if(is.data.frame(germ_microbe)){
+  params$germ_microbe <- germ_microbe[germ_microbe$bald == bald,]}
+  if(is.data.frame(grow_microbe)){
+  params$grow_microbe <- grow_microbe[grow_microbe$bald == bald,]}
+  if(is.data.frame(flw_microbe)){
+  params$flw_microbe <- flw_microbe[flw_microbe$bald == bald,]}
+  
+
   return(params)
 }
 
 
 # Vital rate functions ----------------------------------------------------
-sx_alt <- function(x,params){
-  xb<-data.frame(log_size.t = pmin(x,params$max_size))
-  newdata <- merge(params$newdata, xb)
-  mu <- mean(posterior_epred(object = models$surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500))
-  
-}
 
 sx<-function(x,models,params){
-  xb<-data.frame(log_size.t = pmin(x,params$max_size))
+  xb <- data.frame(log_size.t = pmin(x,params$max_size), surv.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  mu <- mean(posterior_epred(object = models$surv, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500))
+  prep <- brms:::prepare_predictions(models$surv, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  
+  # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
+  
+  int <- params$surv_int + params$surv_elev*params$newdata$rel_elev + params$surv_fire*params$newdata$time_since_fire  
+  linpred <- int + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  mu <- invlogit(linpred)
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
  return(mu)
 }

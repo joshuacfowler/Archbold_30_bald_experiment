@@ -31,8 +31,8 @@ logit = function(x) { log(x/(1-x)) }
 ####################################################################################
 ###### sourcing in the vital rate model objects ####################################
 ####################################################################################
-erycun.survival <- readRDS("/Volumes/Macintosh HD - Data/Users/joshuacfowler/Documents/R_projects/Archbold_30_bald_experiment/erycun.survival.rds")
-# erycun.survival <- readRDS("erycun.survival.rds")
+# erycun.survival <- readRDS("/Volumes/Macintosh HD - Data/Users/joshuacfowler/Documents/R_projects/Archbold_30_bald_experiment/erycun.survival.rds")
+erycun.survival <- readRDS("erycun.survival.rds")
 erycun.growth <- readRDS("erycun.growth.rds")
 erycun.flw_status <- readRDS("erycun.flw_status.rds")
 erycun.flw_stem <- readRDS("erycun.flw_stem.rds")
