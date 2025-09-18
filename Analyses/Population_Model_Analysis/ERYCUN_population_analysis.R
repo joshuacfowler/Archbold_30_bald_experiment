@@ -162,7 +162,9 @@ preddata <- preddata_1 %>%
 models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.flw_status, fert = erycun.flw_stem, 
                     seeds_per_stem = 183, seed_mortality = .3, seed_germ1 = 0, seed_germ2 = .005,
                     seedling_surv = erycun.survival, seedling_size = erycun.growth)
-params <- make_params(bald.rfx = 12, year = 2000, 
+params <- make_params(draw = 1, 
+                      bald.rfx = T, bald = 12, year.rfx = F, 
+                      surv_par = surv_par, grow_par = grow_par,
                       microbe = 0, 
                       preddata = preddata,
                       germ_microbe = germ_30bald_predictions,
@@ -171,7 +173,7 @@ params <- make_params(bald.rfx = 12, year = 2000,
                       size_bounds = size_bounds_df)
 
 # gxy(0,0,models, params)
-# 
+#
 # plot(fx(1:10, models, params))
 # 
 # 
