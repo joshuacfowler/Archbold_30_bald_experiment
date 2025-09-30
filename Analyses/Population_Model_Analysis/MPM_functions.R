@@ -30,10 +30,11 @@ make_params <- function(draw = NA,
                         size_bounds){
                         #surv_par,surv_sdlg_par,grow_par,grow_sdlg_par,flow_par,fert_par,spike_par,seed_par,recruit_par){
 params <- c()
+params$draw <- draw
 params$newdata <- preddata
 
   if(year.rfx==F){
-    year.rfx_surv <- year.rfx_grow <- year.rfx_flow <- year.rfx_fert <- year.rfx_spike <- year.rfx_rct <-  0
+    year.rfx_surv <- year.rfx_grow <- year.rfx_flw <- year.rfx_fert <- year.rfx_spike <- year.rfx_rct <-  0
     params$newdata$year.t1 = NA}
 
   if(year.rfx==T){
@@ -41,14 +42,16 @@ params$newdata <- preddata
 
   
   if(bald.rfx==F){
-    bald.rfx_surv <- bald.rfx_grow <- bald.rfx_flow <- bald.rfx_fert <- bald.rfx_spike <- bald.rfx_rct <-  0}
+    bald.rfx_surv <- bald.rfx_grow <- bald.rfx_flw <- bald.rfx_fert <- bald.rfx_spike <- bald.rfx_rct <-  0}
   
   if(bald.rfx==T){
     params$newdata <- preddata[preddata$bald == bald,]
 
      if(bald %in% parse_number(colnames(surv_par[,grepl("r_bald", colnames(surv_par))]))){
      bald.rfx_surv <- surv_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
-     bald.rfx_surv <- grow_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
+     bald.rfx_grow <- grow_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
+     bald.rfx_flw <- flw_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
+     bald.rfx_fert <- fert_par[draw,paste0("r_bald[", bald, ",Intercept]")]; 
      
      # bald.rfx_grow <- grow_par$tau_year[draw,species,(endo_var_U+1),(year)];
      # bald.rfx_flow <- flow_par$tau_year[draw,species,(endo_var_F+1),(year-repro_offset)]; # fitting 
@@ -60,6 +63,8 @@ params$newdata <- preddata
      if(!bald %in% parse_number(colnames(surv_par[,grepl("r_bald", colnames(surv_par))]))){
        bald.rfx_surv <- rnorm(n = 1, mean = 0, sd = surv_par[draw, "sd_bald__Intercept"]);
        bald.rfx_grow <- rnorm(n = 1, mean = 0, sd = grow_par[draw, "sd_bald__Intercept"]);
+       bald.rfx_flw <- rnorm(n = 1, mean = 0, sd = flw_par[draw, "sd_bald__Intercept"]);
+       bald.rfx_fert <- rnorm(n = 1, mean = 0, sd = fert_par[draw, "sd_bald__Intercept"]);
        
      }
 }
@@ -68,6 +73,9 @@ params$newdata <- preddata
   params$bald <- bald
   params$bald.rfx_surv <- bald.rfx_surv
   params$bald.rfx_grow <- bald.rfx_grow
+  params$bald.rfx_flw <- bald.rfx_flw
+  params$bald.rfx_fert <- bald.rfx_fert
+  
   
   
   
@@ -97,6 +105,9 @@ params$newdata <- preddata
   params$fert_fire <- fert_par[draw,"b_time_since_fire"]
   params$fert_elev <-  fert_par[draw,"b_rel_elev"]
   params$fert_int <- fert_par[draw,"b_Intercept"] 
+  params$fert_size <- fert_par[draw,"b_log_size.t"] 
+  params$fert_shape <- fert_par[draw,"shape"]
+  
   
   params$microbe_off <- microbe_off
   # params$germ_microbe <- germ_microbe
@@ -119,11 +130,11 @@ params$newdata <- preddata
 sx<-function(x,models,params){
   xb <- data.frame(log_size.t = pmin(x,params$max_size), surv.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  prep <- brms:::prepare_predictions(models$surv, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  prep <- brms:::prepare_predictions(models$surv, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw)
   
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
-  int <- params$surv_int + params$surv_elev*params$newdata$rel_elev + params$surv_fire*params$newdata$time_since_fire  
+  int <- params$surv_int + params$surv_elev*newdata$rel_elev + params$surv_fire*newdata$time_since_fire  
   linpred <- int + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
   mu <- invlogit(linpred)
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
@@ -134,15 +145,15 @@ sx<-function(x,models,params){
 gxy <- function(x,y,models,params){
   xb <- data.frame(log_size.t = pmin(x,params$max_size), log_size.t1 = NA_real_) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  prep <- brms:::prepare_predictions(models$grow, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  prep <- brms:::prepare_predictions(models$grow, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw)
   
-  int <- params$grow_int + params$grow_elev*params$newdata$rel_elev + params$grow_fire*params$newdata$time_since_fire  
+  int <- params$grow_int + params$grow_elev*newdata$rel_elev + params$grow_fire*newdata$time_since_fire  
   # adjust the intercept by the relative effect of microbiome for a given bald
   int_1 <- int + int*params$microbe_off*params$grow_microbe$rel_diff
   linpred <- int_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
   
   # pred_mu <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("mu"), transform = TRUE))
-  pred_sigma <- posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = draw, dpar = c("sigma"))
+  pred_sigma <- posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = params$draw, dpar = c("sigma"))
   grow <- dnorm(x=y, 
                 mean=linpred,
                 sd = exp(pred_sigma))
@@ -161,21 +172,28 @@ pxy<-function(x,y,models,params){
 
 fx<-function(x,models,params){
   
-  xb <- data.frame(log_size.t = pmin(x,params$max_size), flw.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = pmin(x,params$max_size), flw_status.t = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  prep <- brms:::prepare_predictions(models$flw, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  prep <- brms:::prepare_predictions(models$flw, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw, sample_new_levels = "gaussian")
   
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
   int.flw <- params$flw_int + params$flw_elev*params$newdata$rel_elev + params$flw_fire*params$newdata$time_since_fire  
   # adjust the intercept by the relative effect of microbiome for a given bald
-  int.flw_1 <- int + int*params$microbe_off*params$flw_microbe$rel_diff
+  int.flw_1 <- int.flw + int.flw*params$microbe_off*params$flw_microbe$rel_diff
   
-  linpred.flw <- int.flw_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
-  flw_prob <- invlogit(linpred.flw)
+  linpred.flw <- c(int.flw_1) + 
+    c(prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1]) + c(prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,] )+ # adding in the smooth terms
+    c(prep$dpars$mu$re$Z$bald[1]*prep$dpars$mu$re$r$bald) # adding in the bald random effects matrix
+    
+  flw_prob <- as.numeric(invlogit(linpred.flw))
   
+  # implementing the truncation here by rescaling the expectation by the probability of Y=0, given by (1/1+shape*mu)^1/shape
+  trunc <- newdata[1,];trunc$log_size.t <- 0
+  fert_mu <- exp(posterior_linpred(models$fert, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw))
   
-  flw_stem <- mean(posterior_epred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500))
+  flw_stem <- fert_mu/(1- ((1/(1+params$fert_shape*fert_mu))^(1/params$fert_shape)))
+
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
   germination <- models$seed_germ1 + models$seed_germ1*params$microbe_off*params$germ_microbe$rel_diff
@@ -187,21 +205,28 @@ fx<-function(x,models,params){
 
 
 seed_production <- function(x,models,params){
-  xb <- data.frame(log_size.t = pmin(x,params$max_size), flw.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = pmin(x,params$max_size), flw_status.t = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  prep <- brms:::prepare_predictions(models$flw, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  prep <- brms:::prepare_predictions(models$flw, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw, sample_new_levels = "gaussian")
   
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
   int.flw <- params$flw_int + params$flw_elev*params$newdata$rel_elev + params$flw_fire*params$newdata$time_since_fire  
   # adjust the intercept by the relative effect of microbiome for a given bald
-  int.flw_1 <- int + int*params$microbe_off*params$flw_microbe$rel_diff
+  int.flw_1 <- int.flw + int.flw*params$microbe_off*params$flw_microbe$rel_diff
   
-  linpred.flw <- int.flw_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
-  flw_prob <- invlogit(linpred.flw)
+  linpred.flw <- c(int.flw_1) + 
+    c(prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1]) + c(prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,] )+ # adding in the smooth terms
+    c(prep$dpars$mu$re$Z$bald[1]*prep$dpars$mu$re$r$bald) # adding in the bald random effects matrix
+
+  flw_prob <- as.numeric(invlogit(linpred.flw))
   
+  # implementing the truncation here by rescaling the expectation by the probability of Y=0, given by (1/1+shape*mu)^1/shape
+  trunc <- newdata[1,];trunc$log_size.t <- 0
+  fert_mu <- exp(posterior_linpred(models$fert, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw))
   
-  flw_stem <- mean(posterior_epred(object = models$fert, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500))
+  flw_stem <- fert_mu/(1- ((1/(1+params$fert_shape*fert_mu))^(1/params$fert_shape)))
+  
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
   germination <- models$seed_germ1 + models$seed_germ1*params$microbe_off*params$germ_microbe$rel_diff
@@ -221,14 +246,14 @@ seed_bank <- function(models, params){
 # Filling out the recruitment from seed bank size distribution. Currently I am just filling these with the prediction for the minimum size, but I can do this better.
 recruit_surv <- function(models, params){
   
-  xb <- data.frame(log_size.t = pmin(x,params$min_size), surv.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = params$min_size, surv.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  prep <- brms:::prepare_predictions(models$seedling_surv, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  prep <- brms:::prepare_predictions(models$seedling_surv, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw)
   
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
-  int <- params$surv_int + params$surv_elev*params$newdata$rel_elev + params$surv_fire*params$newdata$time_since_fire  
-  linpred <- int + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  int <- params$surv_int + params$surv_elev*newdata$rel_elev + params$surv_fire*newdata$time_since_fire  
+  linpred <- c(int) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
   mu <- invlogit(linpred)
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
   return(mu)
@@ -238,15 +263,15 @@ recruit_size <- function(y,models, params){
   
   xb <-   xb<-data.frame(log_size.t = params$min_size, log_size.t1 = NA_real_) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
-  prep <- brms:::prepare_predictions(models$seedling_grow, newdata = newdata, allow_new_levels = TRUE, draw_ids = draw)
+  prep <- brms:::prepare_predictions(models$seedling_size, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw)
   
-  int <- params$grow_int + params$grow_elev*params$newdata$rel_elev + params$grow_fire*params$newdata$time_since_fire  
+  int <- params$grow_int + params$grow_elev*newdata$rel_elev + params$grow_fire*newdata$time_since_fire  
   # adjust the intercept by the relative effect of microbiome for a given bald
   int_1 <- int + int*params$microbe_off*params$grow_microbe$rel_diff
-  linpred <- int_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  linpred <- c(int_1) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
   
   # pred_mu <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("mu"), transform = TRUE))
-  pred_sigma <- posterior_linpred(object = models$seedling_grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = draw, dpar = c("sigma"))
+  pred_sigma <- posterior_linpred(object = models$seedling_size, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = params$draw, dpar = c("sigma"))
   grow <- dnorm(x=y, 
                 mean=linpred,
                 sd = exp(pred_sigma))

@@ -4,7 +4,7 @@
 # Date: Oct 8, 2024
 ####################################################################################
 ##### Set up #####
-
+ 
 library(tidyverse)
 library(readxl)
 library(lubridate)
@@ -36,7 +36,7 @@ erycun.survival <- readRDS("erycun.survival.rds")
 erycun.growth <- readRDS("erycun.growth.rds")
 erycun.flw_status <- readRDS("erycun.flw_status.rds")
 erycun.flw_stem <- readRDS("erycun.flw_stem.rds")
-erycun.flw_head <- readRDS("erycun.flw_head.rds")
+# erycun.flw_head <- readRDS("erycun.flw_head.rds")
 
 
 surv_par <- as.data.frame(erycun.survival)
@@ -165,6 +165,7 @@ models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.f
 params <- make_params(draw = 1, 
                       bald.rfx = T, bald = 12, year.rfx = F, 
                       surv_par = surv_par, grow_par = grow_par,
+                      flw_par = flw_par, fert_par = flw_stem_par,
                       microbe = 0, 
                       preddata = preddata,
                       germ_microbe = germ_30bald_predictions,
@@ -180,11 +181,12 @@ params <- make_params(draw = 1,
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 100
+ndraws <- 10
 nbalds <- 1 #length(unique(preddata$bald))
 nmicrobe <- 2
 
-balds <- "12"#unique(preddata$bald)
+balds <- "16"#unique(preddata$bald)
+post_draws <- sample.int(7500,size=ndraws) # The models except for seedling growth have 7500 iterations. That one has more (15000 iterations) to help it converge.
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
 lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
@@ -192,13 +194,18 @@ lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
 for(i in 1:ndraws){
   for(b in 1:nbalds){
     for(m in 1:nmicrobe){
-  lambda[i,b,m] <- popbio::lambda(bigmatrix(params = make_params(bald.rfx = balds[b],year = NA, 
-                                                           preddata = preddata, 
-                                                           microbe = microbe[m],
-                                                           germ_microbe = germ_30bald_predictions,
-                                                           grow_microbe = grow_30bald_predictions,
-                                                           flw_microbe = flw_30bald_predictions,
-                                                           size_bounds = size_bounds_df), 
+  lambda[i,b,m] <- popbio::lambda(bigmatrix(params = make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
+                                                                 draw=post_draws[i],
+                                                                 preddata = preddata, 
+                                                                 microbe = microbe[m],
+                                                                 surv_par = surv_par,
+                                                                 grow_par = grow_par, 
+                                                                 flw_par = flw_par,
+                                                                 fert_par = flw_stem_par,
+                                                                 germ_microbe = germ_30bald_predictions,
+                                                                 grow_microbe = grow_30bald_predictions,
+                                                                 flw_microbe = flw_30bald_predictions,
+                                                                 size_bounds = size_bounds_df), 
                                            models = models, matdim = 25, extension = 1)$MPMmat)
     }
   }
