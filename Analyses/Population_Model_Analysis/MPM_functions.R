@@ -128,7 +128,7 @@ params$newdata <- preddata
 # Vital rate functions ----------------------------------------------------
 
 sx<-function(x,models,params){
-  xb <- data.frame(log_size.t = pmin(x,params$max_size), surv.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = pmax(pmin(x,params$max_size), params$min_size), surv.t1 = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
   prep <- brms:::prepare_predictions(models$surv, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw)
   
@@ -136,14 +136,15 @@ sx<-function(x,models,params){
   
   int <- params$surv_int + params$surv_elev*newdata$rel_elev + params$surv_fire*newdata$time_since_fire  
   linpred <- int + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
-  mu <- invlogit(linpred)
+  mu <- c(invlogit(linpred))
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
  return(mu)
 }
 
 
+
 gxy <- function(x,y,models,params){
-  xb <- data.frame(log_size.t = pmin(x,params$max_size), log_size.t1 = NA_real_) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = pmax(pmin(x,params$max_size), params$min_size), log_size.t1 = NA_real_) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
   prep <- brms:::prepare_predictions(models$grow, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw)
   
@@ -172,7 +173,7 @@ pxy<-function(x,y,models,params){
 
 fx<-function(x,models,params){
   
-  xb <- data.frame(log_size.t = pmin(x,params$max_size), flw_status.t = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = pmax(pmin(x,params$max_size), params$min_size), flw_status.t = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
   prep <- brms:::prepare_predictions(models$flw, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw, sample_new_levels = "gaussian")
   
@@ -198,14 +199,14 @@ fx<-function(x,models,params){
   # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
   germination <- models$seed_germ1 + models$seed_germ1*params$microbe_off*params$germ_microbe$rel_diff
   
-  recruits1 <- flw_prob * flw_stem * models$seeds_per_stem * germination
+  recruits1 <- c(flw_prob * flw_stem * models$seeds_per_stem * germination)
   return(recruits1)
 }
 
 
 
 seed_production <- function(x,models,params){
-  xb <- data.frame(log_size.t = pmin(x,params$max_size), flw_status.t = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
+  xb <- data.frame(log_size.t = pmax(pmin(x,params$max_size), params$min_size), flw_status.t = 0) # note: the prepare_predictions function requires a response variable, in this case has to be bernoulli, not just NA
   newdata <- merge(params$newdata, xb)
   prep <- brms:::prepare_predictions(models$flw, newdata = newdata, allow_new_levels = TRUE, draw_ids = params$draw, sample_new_levels = "gaussian")
   
@@ -230,7 +231,7 @@ seed_production <- function(x,models,params){
   # flw_head <- posterior_linpred(object = models$head, newdata = newdata, re_formula = NULL,, allow_new_levels = TRUE, ndraws = 1)[1,]
   # recruit <- models$recruit + models$recruit*params$microbe_off*params$germ_microbe$rel_diff
   germination <- models$seed_germ1 + models$seed_germ1*params$microbe_off*params$germ_microbe$rel_diff
-  seeds <- flw_prob * flw_stem * models$seeds_per_stem * (1-germination)*(1-models$seed_mortality)
+  seeds <- c(flw_prob * flw_stem * models$seeds_per_stem * (1-germination)*(1-models$seed_mortality))
   return(seeds)
 }
 
@@ -254,7 +255,7 @@ recruit_surv <- function(models, params){
   
   int <- params$surv_int + params$surv_elev*newdata$rel_elev + params$surv_fire*newdata$time_since_fire  
   linpred <- c(int) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
-  mu <- invlogit(linpred)
+  mu <- c(invlogit(linpred))
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
   return(mu)
 }
@@ -291,9 +292,9 @@ emergence <- function(y,models, params){
 
 
 # Bigmatrix function ------------------------------------------------------
-bigmatrix<-function(params,models,matdim, extension=.1){   
-  Lb <- params$min_size # size range of the data, extension here adds sizes smaller than min size which accounts for probability density lost at predicted sizes smaller than our lower bound
-  Ub <- params$max_size*(1+extension) # size range of the data, extension here adds sizes larger than max size which accounts for probability density lost at predicted sizes larger than our upper bound
+bigmatrix<-function(params,models,matdim, extension=.1){  
+  Lb <- params$min_size-extension # size range of the data, extension here adds sizes smaller than min size which accounts for probability density lost at predicted sizes smaller than our lower bound
+  Ub <- params$max_size+extension # size range of the data, extension here adds sizes larger than max size which accounts for probability density lost at predicted sizes larger than our upper bound
   h <- (Ub-Lb)/matdim 
   y <- Lb + (1:matdim)*h - h/2# implementing the midpoint rule to create a vector of sizes from min to max (+ extension)
   #fertility transition
@@ -309,11 +310,13 @@ bigmatrix<-function(params,models,matdim, extension=.1){
   Tmat[2:(matdim+1),1] <- emergence(y,models=models,params=params)
 
   
-  Tmat[2:(matdim+1),2:(matdim+1)] <- h*t(outer(y,y, FUN = pxy,models=models,params=params))
+  Tmat[2:(matdim+1),2:(matdim+1)] <- h*t(outer(y,y, pxy,models=models,params=params))
   
   MPMmat<-Tmat + Fmat
   return(list(MPMmat = MPMmat, Tmat = Tmat, Fmat = Fmat))
 }
 
-
-
+# checking for eviction
+# plot(y, sx(y,models,params), xlab="size", type="l",
+#      ylab="Survival Probability", lwd = 2)
+# points(y,apply(Tmat[2:matdim+1,1:matdim+1],2,sum), col="red",lwd=1,cex = .5,pch=19)
