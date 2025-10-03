@@ -21,7 +21,8 @@ make_mods <- function(grow, surv, flw, fert, seeds_per_stem, seed_mortality, see
   models$seedling_size <- seedling_size
   return(models)
 }
-make_params <- function(draw = NA,
+make_params <- function(post_draws = NA,
+                        iter = NA,
                         surv_par, grow_par, flw_par, fert_par,
                         bald.rfx=F,bald = NULL,
                         year.rfx=F,year=NULL,
@@ -30,7 +31,8 @@ make_params <- function(draw = NA,
                         size_bounds){
                         #surv_par,surv_sdlg_par,grow_par,grow_sdlg_par,flow_par,fert_par,spike_par,seed_par,recruit_par){
 params <- c()
-params$draw <- draw
+draw <- post_draws[iter]
+params$draw <- draw 
 params$newdata <- preddata
 
   if(year.rfx==F){
@@ -114,11 +116,11 @@ params$newdata <- preddata
   # params$grow_microbe <- grow_microbe
   # params$flw_microbe <- flw_microbe
   if(is.data.frame(germ_microbe)){
-  params$germ_microbe <- germ_microbe[germ_microbe$bald == bald,]}
+  params$germ_microbe <- germ_microbe[germ_microbe$bald == bald,][iter,]}
   if(is.data.frame(grow_microbe)){
-  params$grow_microbe <- grow_microbe[grow_microbe$bald == bald,]}
+  params$grow_microbe <- grow_microbe[grow_microbe$bald == bald,][iter,]}
   if(is.data.frame(flw_microbe)){
-  params$flw_microbe <- flw_microbe[flw_microbe$bald == bald,]}
+  params$flw_microbe <- flw_microbe[flw_microbe$bald == bald,][iter,]}
   
 
   return(params)
@@ -320,3 +322,5 @@ bigmatrix<-function(params,models,matdim, extension=.1){
 # plot(y, sx(y,models,params), xlab="size", type="l",
 #      ylab="Survival Probability", lwd = 2)
 # points(y,apply(Tmat[2:matdim+1,1:matdim+1],2,sum), col="red",lwd=1,cex = .5,pch=19)
+
+# for ERYCUN, I found that 25 size bins, and a relatively small extension (2) is sufficient

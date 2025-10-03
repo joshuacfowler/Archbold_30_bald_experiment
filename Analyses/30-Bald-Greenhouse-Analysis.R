@@ -257,8 +257,8 @@ set.seed(123)
 
 ## MCMC settings
 mcmc_pars <- list(
-  warmup = 500, 
-  iter = 1000, 
+  warmup = 2500, 
+  iter = 5000, 
   thin = 1, 
   chains = 3
 )
@@ -302,53 +302,54 @@ summary(germ.m)
 # now incorporating the environmental covariates and a random effect
 
 
-
-germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire + (1|soil_source), data = germ.covariates,
-              family = binomial(link = "logit"),
-              prior = c(set_prior("normal(0,1)", class = "b")),
+formula <- bf(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire 
+                + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S
+                + spp_code*live_sterile*Dim1_ITS + spp_code*live_sterile*Dim2_ITS +
+                (1|soil_source),
+              zi ~ 1 + spp_code*live_sterile)
+germ.m <- brm(formula, data = germ.covariates,
+              family = "zero_inflated_binomial",
+              # family = binomial(link = "logit"),
+              prior = c(set_prior("normal(0,1)", class = "b"),
+                        set_prior("normal(0,1)", class = "b", dpar = "zi")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+saveRDS(germ.m, file = "30_bald_germ.m.Rds")
+germ.m <- readRDS(germ.m, file = "30_bald_germ.m.Rds")
 
-germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire 
-              + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S 
-              + spp_code*live_sterile*Dim1_ITS + spp_code*live_sterile*Dim2_ITS 
-              + (1|soil_source), data = germ.covariates,
-              family = binomial(link = "logit"),
-              prior = c(set_prior("normal(0,1)", class = "b")),
-              warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+# germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire 
+#               + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S 
+#               + spp_code*live_sterile*Dim1_ITS + spp_code*live_sterile*Dim2_ITS 
+#               + (1|soil_source), data = germ.covariates,
+#               family = binomial(link = "logit"),
+#               prior = c(set_prior("normal(0,1)", class = "b")),
+#               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+pp_check(germ.m, ndraws = 100)
+pp_check(germ.m,ndraws = 100, type = "dens_overlay_grouped", group = "spp_code")+ lims(x = c(0,10),y = c(0,1))
+pp_check(germ.m,ndraws = 100, type = "dens_overlay_grouped", group = "live_sterile") #+ lims(x = c(0,10))
+
+pp_check(germ.m,ndraws = 100, type = "stat",stat = "mean") 
+pp_check(germ.m,ndraws = 100, type = "stat",stat = "sd") 
+
+pp_check(germ.m,ndraws = 100, type = "stat_grouped",stat = "mean", group = "live_sterile") 
+pp_check(germ.m,ndraws = 100, type = "stat_grouped",stat = "mean", group = "spp_code") 
+pp_check(germ.m,ndraws = 100, type = "stat_grouped",stat = "sd", group = "live_sterile") 
+pp_check(germ.m,ndraws = 100, type = "stat_grouped",stat = "sd", group = "spp_code") 
 
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                             rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
-                             time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
-                             Dim1_16S = seq(from = min(germ.covariates$Dim1_16S, na.rm = T), to = max(germ.covariates$Dim1_16S, na.rm = T), length.out = 10),
-                             Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
-                             Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
-                             Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
-
-prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                               rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
-                               time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
-                               Dim2_16S = seq(from = min(germ.covariates$Dim2_16S, na.rm = T), to = max(germ.covariates$Dim2_16S, na.rm = T), length.out = 10),
-                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
-                               Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
-                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
-
-prediction_df.3 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                               rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
-                               time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
-                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
-                               Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
-                               Dim1_ITS = seq(from = min(germ.covariates$Dim1_ITS, na.rm = T), to = max(germ.covariates$Dim1_ITS, na.rm = T), length.out = 10),
-                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
-
-prediction_df.4 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                               rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)), 
-                               time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+                               rel_elev = c(median(germ.covariates$rel_elev,na.rm = T)), time_since_fire = seq(min(germ.covariates$time_since_fire,na.rm = T), max(germ.covariates$time_since_fire,na.rm = T), by = .2),
                                Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
                                Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
                                Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
-                               Dim2_ITS = seq(from = min(germ.covariates$Dim2_ITS, na.rm = T), to = max(germ.covariates$Dim2_ITS, na.rm = T), length.out = 10))
+                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+
+prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), 
+                               rel_elev = seq(min(germ.covariates$rel_elev,na.rm = T), max(germ.covariates$rel_elev,na.rm = T), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+                               Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+                               Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
 
 
 preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)
@@ -362,92 +363,189 @@ prediction_df.2$fit <- preds.2[,"Estimate"]
 prediction_df.2$lwr <- preds.2[,"Q2.5"]
 prediction_df.2$upr <- preds.2[,"Q97.5"]
 
-preds.3 <- fitted(germ.m, newdata = prediction_df.3, re_formula = NA)
-prediction_df.3$fit <- preds.3[,"Estimate"]
-prediction_df.3$lwr <- preds.3[,"Q2.5"]
-prediction_df.3$upr <- preds.3[,"Q97.5"]
 
-
-preds.4 <- fitted(germ.m, newdata = prediction_df.4, re_formula = NA)
-prediction_df.4$fit <- preds.4[,"Estimate"]
-prediction_df.4$lwr <- preds.4[,"Q2.5"]
-prediction_df.4$upr <- preds.4[,"Q97.5"]
 
 
 # now we can plot the model predictions
 
-# germ.binned.1 <- germ.covariates %>% 
-#   mutate(fire_bin = time_since_fire, 3) %>% 
-#   group_by(spp_code, fire_bin,  live_sterile) %>% 
-#   summarize(mean_elev = mean(rel_elev, na.rm = T),
-#             mean_germ = mean(seed_prop, na.rm = T),
-#             mean_fire = mean(time_since_fire, na.rm = T))
+germ.binned.1 <- germ.covariates %>%
+  mutate(fire_bin = time_since_fire, 3) %>%
+  group_by(spp_code, fire_bin,  live_sterile) %>%
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_germ = mean(seed_prop, na.rm = T),
+            mean_fire = mean(time_since_fire, na.rm = T))
 
-# germ.binned.2 <- germ.covariates %>% 
-#          mutate(elev_bin = cut_number(rel_elev, 10)) %>% 
-#   group_by(spp_code, elev_bin,  live_sterile) %>% 
-#   summarize(mean_elev = mean(rel_elev, na.rm = T),
-#             mean_germ = mean(seed_prop, na.rm = T))
+germ.binned.2 <- germ.covariates %>%
+         mutate(elev_bin = cut_number(rel_elev, 10)) %>%
+  group_by(spp_code, elev_bin,  live_sterile) %>%
+  summarize(mean_elev = mean(rel_elev, na.rm = T),
+            mean_germ = mean(seed_prop, na.rm = T))
+
 
 
 
 
 germ_plot.1 <- ggplot(data = prediction_df.1)+
-  geom_ribbon(aes(x = Dim1_16S, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = Dim1_16S, y = fit, group = live_sterile, color = live_sterile)) +
-  # geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
+  geom_ribbon(aes(x = time_since_fire, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = time_since_fire, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
+  facet_wrap(~spp_code, scales = "free") + labs(y = "Size") + theme_light()
 
 germ_plot.1
 
 
 
-ggsave(germ_plot.1, filename = "germ_plot_Dim1-16S.png",  width = 6, height = 6)
+ggsave(germ_plot.1, filename = "germ_plot_fire.png",  width = 8, height = 8)
 
 
 germ_plot.2 <- ggplot(data = prediction_df.2)+
-  geom_ribbon(aes(x = Dim2_16S, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = Dim2_16S, y = fit, group = live_sterile, color = live_sterile)) +
-  # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+  geom_ribbon(aes(x = rel_elev, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+  geom_line(aes(x = rel_elev, y = fit, group = live_sterile, color = live_sterile)) +
+  geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+  facet_wrap(~spp_code,  scales = "free") + labs(y = "Size") + theme_light()
 
 germ_plot.2
 
-ggsave(germ_plot.2, filename = "germ_plot_Dim2-16S.png", width = 6, height = 6)
+ggsave(germ_plot.2, filename = "germ_plot_elev.png",  width = 8, height = 8)
 
 
 
+# 
+# # Making prediction dataframe
+# prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+#                              rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)),
+#                              time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+#                              Dim1_16S = seq(from = min(germ.covariates$Dim1_16S, na.rm = T), to = max(germ.covariates$Dim1_16S, na.rm = T), length.out = 10),
+#                              Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+#                              Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+#                              Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+#
+# prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+#                                rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)),
+#                                time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+#                                Dim2_16S = seq(from = min(germ.covariates$Dim2_16S, na.rm = T), to = max(germ.covariates$Dim2_16S, na.rm = T), length.out = 10),
+#                                Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+#                                Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+#                                Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+#
+# prediction_df.3 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+#                                rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)),
+#                                time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+#                                Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+#                                Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+#                                Dim1_ITS = seq(from = min(germ.covariates$Dim1_ITS, na.rm = T), to = max(germ.covariates$Dim1_ITS, na.rm = T), length.out = 10),
+#                                Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+#
+# prediction_df.4 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
+#                                rel_elev = c(median(germ.covariates$rel_elev, na.rm = T)),
+#                                time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
+#                                Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+#                                Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+#                                Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+#                                Dim2_ITS = seq(from = min(germ.covariates$Dim2_ITS, na.rm = T), to = max(germ.covariates$Dim2_ITS, na.rm = T), length.out = 10))
+#
+#
+# preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)
+# prediction_df.1$fit <- preds.1[,"Estimate"]
+# prediction_df.1$lwr <- preds.1[,"Q2.5"]
+# prediction_df.1$upr <- preds.1[,"Q97.5"]
+#
+#
+# preds.2 <- fitted(germ.m, newdata = prediction_df.2, re_formula = NA)
+# prediction_df.2$fit <- preds.2[,"Estimate"]
+# prediction_df.2$lwr <- preds.2[,"Q2.5"]
+# prediction_df.2$upr <- preds.2[,"Q97.5"]
+#
+# preds.3 <- fitted(germ.m, newdata = prediction_df.3, re_formula = NA)
+# prediction_df.3$fit <- preds.3[,"Estimate"]
+# prediction_df.3$lwr <- preds.3[,"Q2.5"]
+# prediction_df.3$upr <- preds.3[,"Q97.5"]
+#
+#
+# preds.4 <- fitted(germ.m, newdata = prediction_df.4, re_formula = NA)
+# prediction_df.4$fit <- preds.4[,"Estimate"]
+# prediction_df.4$lwr <- preds.4[,"Q2.5"]
+# prediction_df.4$upr <- preds.4[,"Q97.5"]
+#
+#
+# # now we can plot the model predictions
+#
+# # germ.binned.1 <- germ.covariates %>%
+# #   mutate(fire_bin = time_since_fire, 3) %>%
+# #   group_by(spp_code, fire_bin,  live_sterile) %>%
+# #   summarize(mean_elev = mean(rel_elev, na.rm = T),
+# #             mean_germ = mean(seed_prop, na.rm = T),
+# #             mean_fire = mean(time_since_fire, na.rm = T))
+#
+# # germ.binned.2 <- germ.covariates %>%
+# #          mutate(elev_bin = cut_number(rel_elev, 10)) %>%
+# #   group_by(spp_code, elev_bin,  live_sterile) %>%
+# #   summarize(mean_elev = mean(rel_elev, na.rm = T),
+# #             mean_germ = mean(seed_prop, na.rm = T))
+#
+#
+#
+#
+# germ_plot.1 <- ggplot(data = prediction_df.1)+
+#   geom_ribbon(aes(x = Dim1_16S, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+#   geom_line(aes(x = Dim1_16S, y = fit, group = live_sterile, color = live_sterile)) +
+#   # geom_point(data = germ.binned.1, aes( x= mean_fire, y = mean_germ, color = live_sterile), alpha = .5)+
+#   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+#   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+#   facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Time Since Fire (Years)", color = "Microbiome", fill = "Microbiome") + theme_light()
+#
+# germ_plot.1
+#
+#
+#
+# ggsave(germ_plot.1, filename = "germ_plot_Dim1-16S.png",  width = 6, height = 6)
+#
+#
+# germ_plot.2 <- ggplot(data = prediction_df.2)+
+#   geom_ribbon(aes(x = Dim2_16S, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+#   geom_line(aes(x = Dim2_16S, y = fit, group = live_sterile, color = live_sterile)) +
+#   # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+#   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+#   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+#   facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+#
+# germ_plot.2
+#
+# ggsave(germ_plot.2, filename = "germ_plot_Dim2-16S.png", width = 6, height = 6)
 
-germ_plot.3 <- ggplot(data = prediction_df.3)+
-  geom_ribbon(aes(x = Dim1_ITS, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = Dim1_ITS, y = fit, group = live_sterile, color = live_sterile)) +
-  # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
-  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
-  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
 
-germ_plot.3
-
-ggsave(germ_plot.3, filename = "germ_plot_Dim1-ITS.png", width = 6, height = 6)
-
-
-
-
-germ_plot.4 <- ggplot(data = prediction_df.4)+
-  geom_ribbon(aes(x = Dim2_ITS, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
-  geom_line(aes(x = Dim2_ITS, y = fit, group = live_sterile, color = live_sterile)) +
-  # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
-  scale_color_manual(values = c(my_palette[1], my_palette[3]))+
-  scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
-  facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
-
-germ_plot.4
-
-ggsave(germ_plot.4, filename = "germ_plot_Dim2-ITS.png", width = 6, height = 6)
+#
+#
+# germ_plot.3 <- ggplot(data = prediction_df.3)+
+#   geom_ribbon(aes(x = Dim1_ITS, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+#   geom_line(aes(x = Dim1_ITS, y = fit, group = live_sterile, color = live_sterile)) +
+#   # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+#   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+#   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+#   facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+#
+# germ_plot.3
+#
+# ggsave(germ_plot.3, filename = "germ_plot_Dim1-ITS.png", width = 6, height = 6)
+#
+#
+#
+#
+# germ_plot.4 <- ggplot(data = prediction_df.4)+
+#   geom_ribbon(aes(x = Dim2_ITS, ymin = lwr, ymax = upr, group = live_sterile, fill = live_sterile), alpha = .3)+
+#   geom_line(aes(x = Dim2_ITS, y = fit, group = live_sterile, color = live_sterile)) +
+#   # geom_point(data = germ.binned.2, aes( x= mean_elev, y = mean_germ, color = live_sterile), alpha = .5)+
+#   scale_color_manual(values = c(my_palette[1], my_palette[3]))+
+#   scale_fill_manual(values = c(my_palette[1], my_palette[3]))+
+#   facet_wrap(~spp_code) #+ labs(y = "Proportion Germinated", x = "Rel. Elev. (m)", color = "Microbiome", fill = "Microbiome") + theme_light()
+#
+# germ_plot.4
+#
+# ggsave(germ_plot.4, filename = "germ_plot_Dim2-ITS.png", width = 6, height = 6)
 
 
 
@@ -475,7 +573,7 @@ bald_pred_wide<- bald_pred_df %>%
   pivot_wider(names_from = live_sterile, values_from = posterior ) %>% 
   mutate(rel_diff = ((sterile-live)/sterile))
 
-# write_csv(bald_pred_wide, "germ_30bald_predictions.csv")
+write_csv(bald_pred_wide, "germ_30bald_predictions.csv")
 bald_pred_wide <- read_csv("germ_30bald_predictions.csv")
 germ_bald_pred_summary <- bald_pred_wide %>% 
   group_by(spp_code, bald, rel_elev, time_since_fire) %>% 
@@ -505,13 +603,13 @@ germ_bald_pred_coords <- germ_bald_pred_summary %>%
 
   
 # library(ggmap)
-register_google("") # AIzaSyB6JPEbC-deaZ5OpJc4vagnLm7v-69RmkM
+register_google()#"AIzaSyB6JPEbC-deaZ5OpJc4vagnLm7v-69RmkM")
 # 
 center_point <-  c(mean(bald_coords$longitude), mean(bald_coords$latitude))
 
 archbold_satellite <- get_googlemap(center = center_point, zoom = 12, source = 'google',maptype = "satellite")
 
-germ_Archbold_survey_map <- ggplot()+#ggmap(archbold_satellite)+
+germ_Archbold_survey_map <- ggmap(archbold_satellite)+
   geom_point(data = germ_bald_pred_coords, aes(x = longitude, y = latitude, fill = -rel_diff_mean, size = (-rel_diff_mean)),  size = 3, shape = 21, alpha = .8)+
   # coord_sf(xlim = c(min(bald_pred_coords$longitude)-.01,max(bald_pred_coords$longitude) + .01), ylim = c(min(bald_pred_coords$latitude)-.01,max(bald_pred_coords$latitude) + .01))+
   scale_fill_gradient2(low = "blue", mid = "white", high = "red")+
@@ -546,7 +644,7 @@ grow.m <- brm(log_finalSize ~ -1 + spp_code*live_sterile*rel_elev + spp_code*liv
 
 
 
-# Making prediction dataframe
+ # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(grow_data$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(grow_data$live_sterile),
                                rel_elev = c(median(grow_data$rel_elev,na.rm = T)), time_since_fire = seq(min(grow_data$time_since_fire,na.rm = T), max(grow_data$time_since_fire,na.rm = T), by = .2))
 
@@ -632,6 +730,7 @@ bald_pred_wide<- bald_pred_df %>%
   mutate(rel_diff = ((sterile-live)/sterile))
 
 write_csv(bald_pred_wide, "grow_30bald_predictions.csv")
+bald_pred_wide <- read_csv("grow_30bald_predictions.csv")
 
 grow_bald_pred_summary <- bald_pred_wide %>% 
   group_by(spp_code, bald, rel_elev, time_since_fire) %>% 
@@ -650,7 +749,7 @@ grow_bald_pred_coords <- grow_bald_pred_summary %>%
 # archbold_satellite <- get_googlemap(center = center_point, zoom = 12, source = 'google',
 # maptype = "satellite")
 
-grow_Archbold_survey_map <- ggplot()+#ggmap(archbold_satellite)+
+grow_Archbold_survey_map <- ggmap(archbold_satellite)+
   geom_point(data = grow_bald_pred_coords, aes(x = longitude, y = latitude, fill = (-rel_diff_mean)), size = 3, shape = 21, alpha = .8)+
   # coord_sf(xlim = c(min(bald_pred_coords$longitude)-.01,max(bald_pred_coords$longitude) + .01), ylim = c(min(bald_pred_coords$latitude)-.01,max(bald_pred_coords$latitude) + .01))+
   scale_fill_gradient2(low = "blue", mid = "white", high = "red")+

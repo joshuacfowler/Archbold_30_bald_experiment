@@ -43,23 +43,26 @@ surv_par <- as.data.frame(erycun.survival)
 grow_par <- as.data.frame(erycun.growth)
 flw_par <- as.data.frame(erycun.flw_status)
 flw_stem_par <- as.data.frame(erycun.flw_stem)
-erycun.flw_head <- as.data.frame(erycun.flw_head)
+# erycun.flw_head <- as.data.frame(erycun.flw_head)
 
 # reading in the predicted microbial effects from the 30 bald experiment
 germ_30bald_predictions <- read_csv("germ_30bald_predictions.csv") %>% 
-  group_by(bald, spp_code) %>% 
-  summarize(rel_diff = mean(rel_diff))%>% 
+  select(bald, spp_code, Iter, rel_diff) %>% 
+  # summarize(rel_diff = mean(rel_diff))%>% 
+  drop_na() %>% 
   filter(spp_code == "ERYCUN")
 
 
 grow_30bald_predictions <- read_csv("grow_30bald_predictions.csv") %>% 
-  group_by(bald, spp_code) %>% 
-  summarize(rel_diff = mean(rel_diff)) %>% 
+  select(bald, spp_code, Iter, rel_diff) %>% 
+  # summarize(rel_diff = mean(rel_diff)) %>% 
+  drop_na() %>% 
   filter(spp_code == "ERYCUN")
 
 flw_30bald_predictions <- read_csv("flw_30bald_predictions.csv") %>% 
-  group_by(bald, spp_code) %>% 
-  summarize(rel_diff = mean(rel_diff))%>% 
+  select(bald, spp_code, Iter, rel_diff) %>% 
+  # summarize(rel_diff = mean(rel_diff))%>% 
+  drop_na() %>% 
   filter(spp_code == "ERYCUN")
 ####################################################################################
 ###### sourcing in the MPM functions script ####################################
@@ -162,7 +165,7 @@ preddata <- preddata_1 %>%
 models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.flw_status, fert = erycun.flw_stem, 
                     seeds_per_stem = 183, seed_mortality = .3, seed_germ1 = 0, seed_germ2 = .005,
                     seedling_surv = erycun.survival, seedling_size = erycun.growth)
-params <- make_params(draw = 1, 
+params <- make_params(draw = 400, 
                       bald.rfx = T, bald = 12, year.rfx = F, 
                       surv_par = surv_par, grow_par = grow_par,
                       flw_par = flw_par, fert_par = flw_stem_par,
@@ -181,11 +184,11 @@ params <- make_params(draw = 1,
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 10
-nbalds <- 1 #length(unique(preddata$bald))
+ndraws <- 500
+nbalds <- 1#length(unique(preddata$bald))
 nmicrobe <- 2
 
-balds <- "16"#unique(preddata$bald)
+balds <- "10"#unique(preddata$bald)
 post_draws <- sample.int(7500,size=ndraws) # The models except for seedling growth have 7500 iterations. That one has more (15000 iterations) to help it converge.
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
@@ -195,7 +198,8 @@ for(i in 1:ndraws){
   for(b in 1:nbalds){
     for(m in 1:nmicrobe){
   lambda[i,b,m] <- popbio::lambda(bigmatrix(params = make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
-                                                                 draw=post_draws[i],
+                                                                 post_draws = post_draws,
+                                                                 iter = i,
                                                                  preddata = preddata, 
                                                                  microbe = microbe[m],
                                                                  surv_par = surv_par,
@@ -206,17 +210,19 @@ for(i in 1:ndraws){
                                                                  grow_microbe = grow_30bald_predictions,
                                                                  flw_microbe = flw_30bald_predictions,
                                                                  size_bounds = size_bounds_df), 
-                                           models = models, matdim = 25, extension = 1)$MPMmat)
+                                           models = models, matdim = 25, extension = 2)$MPMmat)
     }
   }
   print(paste("iteration", i))
 }
 
 
+
+
 saveRDS(lambda, "lambda_microbe.Rds")
 lambda <- readRDS("lambda_microbe.Rds")
 dimnames(lambda) <- list(Iter = paste0("iter",1:ndraws), 
-                         Bald = "12",#unique(preddata$bald), 
+                         Bald = "10",#unique(preddata$bald), 
                          Microbe = c("live", "sterile"))
 # lambda
 
