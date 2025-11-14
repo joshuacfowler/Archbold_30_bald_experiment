@@ -13,6 +13,9 @@ library(brms)
 library(bayesplot)
 library(tidybayes)
 
+library(parallel) # used for parallel computing of matrix operations
+
+
 library(popbio)
 
 library(moments) # to calculate skew
@@ -67,10 +70,11 @@ flw_30bald_predictions <- read_csv("flw_30bald_predictions.csv") %>%
 ####################################################################################
 ###### sourcing in the MPM functions script ####################################
 ####################################################################################
-source("Analyses/Population_Model_Analysis/MPM_functions.R")
+source("Analyses/Population_Model_Analysis/size_IPM_functions.R")
 
 # calculating max size
-source(paste0(getwd(),"/Analyses/data_processing.R"))
+# source(paste0(getwd(),"/Analyses/data_processing.R"))
+ERYCUN_covariates <- read_csv("/Users/joshuacfowler/Dropbox/UofMiami/Demographic Data/cleaned_data/ERYCUN_covariates.csv")
 
 ERYCUN <- ERYCUN_covariates %>% 
   mutate(log_size.t = log(ros_diameter.t),
@@ -165,16 +169,17 @@ preddata <- preddata_1 %>%
 models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.flw_status, fert = erycun.flw_stem, 
                     seeds_per_stem = 183, seed_mortality = .3, seed_germ1 = 0, seed_germ2 = .005,
                     seedling_surv = erycun.survival, seedling_size = erycun.growth)
-params <- make_params(draw = 400, 
-                      bald.rfx = T, bald = 12, year.rfx = F, 
-                      surv_par = surv_par, grow_par = grow_par,
-                      flw_par = flw_par, fert_par = flw_stem_par,
-                      microbe = 0, 
-                      preddata = preddata,
-                      germ_microbe = germ_30bald_predictions,
-                      grow_microbe = grow_30bald_predictions,
-                      flw_microbe = flw_30bald_predictions,
-                      size_bounds = size_bounds_df)
+# params <- make_params(post_draws = post_draws,
+#                       iter = i, 
+#                       bald.rfx = T, bald = 12, year.rfx = F, 
+#                       surv_par = surv_par, grow_par = grow_par,
+#                       flw_par = flw_par, fert_par = flw_stem_par,
+#                       microbe = 0, 
+#                       preddata = preddata,
+#                       germ_microbe = germ_30bald_predictions,
+#                       grow_microbe = grow_30bald_predictions,
+#                       flw_microbe = flw_30bald_predictions,
+#                       size_bounds = size_bounds_df)
 
 # gxy(0,0,models, params)
 #
@@ -184,20 +189,20 @@ params <- make_params(draw = 400,
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 500
-nbalds <- 1#length(unique(preddata$bald))
+ndraws <- 3
+nbalds <- length(unique(preddata$bald)[1:3])
 nmicrobe <- 2
 
-balds <- "10"#unique(preddata$bald)
+balds <- unique(preddata$bald)[1:3]
 post_draws <- sample.int(7500,size=ndraws) # The models except for seedling growth have 7500 iterations. That one has more (15000 iterations) to help it converge.
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
 lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
-
+params_list <- matrix_list <- matrix_balds <- matrix_iter <- list()
 for(i in 1:ndraws){
   for(b in 1:nbalds){
     for(m in 1:nmicrobe){
-  lambda[i,b,m] <- popbio::lambda(bigmatrix(params = make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
+      params_list[[paste(paste0("iter",c(1:ndraws)[i]),balds[b],c("live", "sterile")[m], sep = "_")]] <- make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
                                                                  post_draws = post_draws,
                                                                  iter = i,
                                                                  preddata = preddata, 
@@ -209,28 +214,44 @@ for(i in 1:ndraws){
                                                                  germ_microbe = germ_30bald_predictions,
                                                                  grow_microbe = grow_30bald_predictions,
                                                                  flw_microbe = flw_30bald_predictions,
-                                                                 size_bounds = size_bounds_df), 
-                                           models = models, matdim = 25, extension = 2)$MPMmat)
+                                                                 size_bounds = size_bounds_df)
     }
+    # matrix_balds[[b]] <- matrix_list 
   }
+  # matrix_iter[[i]] <- matrix_balds
   print(paste("iteration", i))
 }
 
 
 
+return_MPM <- function(params,...) {
+  bigmatrix(params = params,...)$MPMmat
+  }
 
-saveRDS(lambda, "lambda_microbe.Rds")
-lambda <- readRDS("lambda_microbe.Rds")
-dimnames(lambda) <- list(Iter = paste0("iter",1:ndraws), 
-                         Bald = "10",#unique(preddata$bald), 
-                         Microbe = c("live", "sterile"))
-# lambda
 
-# lambda_cube <- cubelyr::as.tbl_cube(lambda)
-lambda_df <- as_tibble(lambda, rownames = "Iter") %>% 
-  pivot_longer(cols = -Iter, names_to = "name", values_to = "lambda") %>% 
-  separate(name, into = c("Bald", "Microbe")) 
-write_csv(lambda_df, "prelim_IPM_lambdas.csv")
+# system.time(matrix_list <- lapply(X = params_list, FUN = return_MPM, models = models, matdim = 25, extension = 2)) # note that lapply is vectorized, and takes about the same time as using for loops, at least for a few iterations
+system.time(matrix_list <- mclapply(X = params_list, FUN = return_MPM, models = models, matdim = 25, extension = 2)) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+
+lambda_list <- lapply(X = matrix_list, FUN = popbio::lambda) # for already fast operations, the parallelization isn't faster, but it's trivial
+
+lambda_df <- enframe(lambda_list) %>% 
+  unnest(cols = c("name", "value")) %>% 
+  separate(name, into = c("Iter", "Bald", "Microbe")) %>% 
+  rename(lambda=value)
+# write_csv(lambda_df, "prelim_IPM_lambdas.csv")
+
+
+
+# saveRDS(lambda, "lambda_microbe.Rds")
+# lambda <- readRDS("lambda_microbe.Rds")
+# 
+# # lambda
+# 
+# # lambda_cube <- cubelyr::as.tbl_cube(lambda)
+# lambda_df <- as_tibble(lambda, rownames = "Iter") %>% 
+#   pivot_longer(cols = -Iter, names_to = "name", values_to = "lambda") %>% 
+#   separate(name, into = c("Bald", "Microbe")) 
+# write_csv(lambda_df, "prelim_IPM_lambdas.csv")
 
 lambda_summary <- lambda_df %>% 
   filter(!is.na(lambda)) %>% 

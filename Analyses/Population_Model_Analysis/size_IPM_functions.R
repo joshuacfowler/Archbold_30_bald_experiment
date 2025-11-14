@@ -122,6 +122,16 @@ params$newdata <- preddata
   if(is.data.frame(flw_microbe)){
   params$flw_microbe <- flw_microbe[flw_microbe$bald == bald,][iter,]}
   
+  if(microbe_off==0&!is.data.frame(germ_microbe)){
+    params$germ_microbe$rel_diff <- 0
+  }
+  if(microbe_off==0&!is.data.frame(grow_microbe)){
+    params$grow_microbe$rel_diff <- 0
+  }
+  if(microbe_off==0&!is.data.frame(flw_microbe)){
+    params$flw_microbe$rel_diff <- 0
+  }
+  
 
   return(params)
 }
@@ -137,7 +147,9 @@ sx<-function(x,models,params){
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
   int <- params$surv_int + params$surv_elev*newdata$rel_elev + params$surv_fire*newdata$time_since_fire  
-  linpred <- int + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  linpred <- int + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]+
+          c(prep$dpars$mu$re$Z$bald[1]*prep$dpars$mu$re$r$bald) # adding in the bald random effects matrix
+  
   mu <- c(invlogit(linpred))
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
  return(mu)
@@ -153,7 +165,9 @@ gxy <- function(x,y,models,params){
   int <- params$grow_int + params$grow_elev*newdata$rel_elev + params$grow_fire*newdata$time_since_fire  
   # adjust the intercept by the relative effect of microbiome for a given bald
   int_1 <- int + int*params$microbe_off*params$grow_microbe$rel_diff
-  linpred <- int_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  linpred <- int_1 + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]+
+           c(prep$dpars$mu$re$Z$bald[1]*prep$dpars$mu$re$r$bald) # adding in the bald random effects matrix
+  
   
   # pred_mu <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("mu"), transform = TRUE))
   pred_sigma <- posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = params$draw, dpar = c("sigma"))
@@ -256,7 +270,9 @@ recruit_surv <- function(models, params){
   # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
   
   int <- params$surv_int + params$surv_elev*newdata$rel_elev + params$surv_fire*newdata$time_since_fire  
-  linpred <- c(int) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  linpred <- c(int) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]+
+           c(prep$dpars$mu$re$Z$bald[1]*prep$dpars$mu$re$r$bald) # adding in the bald random effects matrix
+  
   mu <- c(invlogit(linpred))
   # invlogit(params$surv_int + params$surv_slope*log(xb) + params$surv_slope_2*(log(xb)^2)*quadratic)
   return(mu)
@@ -271,7 +287,8 @@ recruit_size <- function(y,models, params){
   int <- params$grow_int + params$grow_elev*newdata$rel_elev + params$grow_fire*newdata$time_since_fire  
   # adjust the intercept by the relative effect of microbiome for a given bald
   int_1 <- int + int*params$microbe_off*params$grow_microbe$rel_diff
-  linpred <- c(int_1) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]
+  linpred <- c(int_1) + prep$dpars$mu$sm$fe$Xs[,1]*prep$dpars$mu$sm$fe$bs[,1] + prep$dpars$mu$sm$re$slog_size.t$Zs[[1]] %*% prep$dpars$mu$sm$re$slog_size.t$s[[1]][1,]+
+            c(prep$dpars$mu$re$Z$bald[1]*prep$dpars$mu$re$r$bald) # adding in the bald random effects matrix
   
   # pred_mu <- mean(posterior_linpred(object = models$grow, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, ndraws = 500, dpar = c("mu"), transform = TRUE))
   pred_sigma <- posterior_linpred(object = models$seedling_size, newdata = newdata, re_formula = NULL, allow_new_levels = TRUE, draw_ids = params$draw, dpar = c("sigma"))
