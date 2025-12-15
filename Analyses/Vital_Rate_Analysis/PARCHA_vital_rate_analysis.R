@@ -37,6 +37,39 @@ filepath <- c("/Users/joshuacfowler/Dropbox/UofMiami/Demographic Data")
 
 PARCHA_covariates <- read_csv(paste0(filepath,"/cleaned_data", "/PARCHA_covariates.csv"))
 
+# reading in greenhouse data which has some flower counts
+plants <- read_xlsx(path = "~/Dropbox/UofMiami/Archbold_30baldexperiment.xlsx", sheet = "Census", guess_max = 1048576) # guess_max makes the function look deeper in the columns to assign type
+
+flw_census <- plants %>% 
+  mutate(across(everything(), as.character)) %>% 
+  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted), 
+                contains("Flw"), -contains("notes")) %>% 
+  pivot_longer(cols = c(contains("Flw"))) %>% 
+  separate(name, c("measurement", "census_number", "name")) %>% 
+  filter(spp_code == "PARCHA") %>% 
+  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number), names_from = c(measurement,name), values_from = value, names_repair = "minimal") %>% 
+  filter(FlwCount_measurement>1)
+
+
+# getting size of these plants
+size_census <- plants %>% 
+  mutate(across(everything(), as.character)) %>% 
+  dplyr::select(c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds,reseeding, date_potted), 
+                contains("size"), -contains("notes")) %>% 
+  pivot_longer(cols = c(contains("size"))) %>% 
+  separate(name, c("measurement", "census_number", "name")) %>% 
+  filter(spp_code == "PARCHA") %>% 
+  pivot_wider(id_cols = c(pot_id, x_id, y_id, rep_id, table_id, soil_source, live_sterile, spp_code, number_seeds, reseeding, date_potted, census_number), names_from = c(measurement,name), values_from = value, names_repair = "minimal") %>% 
+  filter(pot_id %in% flw_census$pot_id & Size_date == unique(flw_census$FlwCount_date))
+  
+
+flw_counts <- flw_census %>% 
+  left_join(size_census, by = c("pot_id", "x_id", "y_id", "rep_id", "table_id", "soil_source", "live_sterile", "spp_code", "number_seeds", "reseeding", "date_potted")) %>% 
+  select(pot_id, soil_source, live_sterile, spp_code, FlwCount_date, FlwCount_measurement, HeightSize_measurement, DiameterSize_measurement) %>% 
+  mutate(across( c(FlwCount_measurement, HeightSize_measurement, DiameterSize_measurement),  ~ as.numeric(.))) %>% 
+  mutate(area = pi*((DiameterSize_measurement/2)^2),
+         flw_count = FlwCount_measurement)
+
 
 
 ####################################################################################
@@ -522,6 +555,29 @@ ggplot(data = prediction_df)+
   labs(y = "Recruits") + theme_minimal()
 
 
+
+
+#########################################################################################
+#  average number of flowers for a flowering individual in greenhouse --------
+#########################################################################################
+
+parcha.flw_number <- brm(flw_count~ 1 + live_sterile ,  data = flw_counts,
+                          #flw.t1~ 1 + log_age.t, data = PARCHA_flw.df,
+                          family = negbinomial(),
+                          prior = c(set_prior("normal(0,5)", class = "Intercept"),
+                                    set_prior("normal(0,5)", class = "b")),
+                          warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
+# negative binomial does a reasonably good job
+pp_check(parcha.flw_number, ndraws = 100, type = "dens_overlay")
+
+saveRDS(parcha.flw_number, "parcha.flw_number.rds")
+parcha.flw_number <- readRDS("parcha.flw_number.rds")
+
+
+
+parcha.flw_number
+
+flw_counts
 
 
 

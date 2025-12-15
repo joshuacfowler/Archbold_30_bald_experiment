@@ -7,32 +7,34 @@ invlogit<-function(x){exp(x)/(1+exp(x))}
 
 # Parameter assembly function ---------------------------------------------
 
-make_mods <- function(seedling_surv, surv,
-                      seedling_flw, flw,
-                      recruitment){#flw, fert, seeds_per_stem, seed_mortality, seed_germ1, seed_germ2, seedling_surv, seedling_size){
-  models <- list()
-  models$surv <- surv
-  models$seedling_surv <- seedling_surv
-  models$flw <- flw
-  models$seedling_flw <- seedling_flw
-  models$recruitment <- recruitment
-  models$seed_mortality <- seed_mortality
-  
-  
-  
-  
-  # models$seed_mortality <- seed_mortality
-  # models$seed_germ1 <- seed_germ1
-  # models$seed_germ2 <- seed_germ2  
-
-  return(models)
-}
+# make_mods <- function(seedling_surv, surv,
+#                       seedling_flw, flw,
+#                       recruitment){#flw, fert, seeds_per_stem, seed_mortality, seed_germ1, seed_germ2, seedling_surv, seedling_size){
+#   models <- list()
+#   models$surv <- surv
+#   models$seedling_surv <- seedling_surv
+#   models$flw <- flw
+#   models$seedling_flw <- seedling_flw
+#   models$recruitment <- recruitment
+#   models$seed_mortality <- seed_mortality
+#   
+#   
+#   
+#   
+#   # models$seed_mortality <- seed_mortality
+#   # models$seed_germ1 <- seed_germ1
+#   # models$seed_germ2 <- seed_germ2  
+# 
+#   return(models)
+# }
 make_params <- function(post_draws = NA,
                         iter = NA,
                         surv_par,  sdlg_surv_par,
                         flw_par, sdlg_flw_par,
+                        flw_count_par,
                         recruit_par,
                         seed_mortality,
+                        recruitment_adjustment,
                         season,
                         
                         bald.rfx=F,bald = NULL,
@@ -45,6 +47,7 @@ params <- c()
 draw <- post_draws[iter]
 params$draw <- draw 
 params$newdata <- preddata
+params$season <- season
 
   if(year.rfx==F){
     year.rfx_surv <- year.rfx_sdlg.surv <- year.rfx_flw <- year.rfx_sdlg.flw <- year.rfx_rct <-  0
@@ -117,11 +120,12 @@ params$newdata <- preddata
   params$sdlg.flw_int <- sdlg_flw_par[draw, paste0("b_season",season)] + sdlg_flw_par[draw,"b_time_since_fire"] * params$newdata$time_since_fire + sdlg_flw_par[draw,"b_rel_elev"] * params$newdata$rel_elev + bald.rfx_sdlg.flw
   }
   
-  params$recruit_int <- recruit_par[draw, paste0("b_season",season)] + recruit_par[draw,"b_time_since_fire"] * params$newdata$time_since_fire + recruit_par[draw,"b_rel_elev"] * params$newdata$rel_elev + bald.rfx_rec
-  # compiling GAM related parameters for size-relationship with help from BRMS helper functions in each function
-  # surv_prep <- brms:::prepare_predictions(surv_mod, newdata = new_dat, allow_new_levels = FALSE)
-  # lin_pred_prep = surv_prep$dpars$mu$fe$b[draw,"b_Intercept"] + surv_prep$dpars$mu$sm$fe$Xs*mean(surv_prep$dpars$mu$sm$fe$bs) + surv_prep$dpars$mu$sm$re$sx$Zs[[1]] %*% colMeans(surv_prep$dpars$mu$sm$re$sx$s[[1]])
-  
+  params$flw_count_int <- flw_count_par[draw, "b_Intercept"] +  flw_count_par[draw, "b_live_sterilesterile"]*microbe_off
+
+  params$recruit_int <- (recruit_par[draw, paste0("b_season",season)] + recruit_par[draw,"b_time_since_fire"] * params$newdata$time_since_fire + recruit_par[draw,"b_rel_elev"] * params$newdata$rel_elev + bald.rfx_rec)
+  params$recruit_adjust <- recruitment_adjustment
+  params$seed_mortality <- seed_mortality
+
   params$microbe_off <- microbe_off
   # params$germ_microbe <- germ_microbe
   # params$grow_microbe <- grow_microbe
@@ -174,21 +178,34 @@ sdlg.s<-function(params){
 
 fx<-function(x,params){
   xb <- (pmax(pmin(x,params$max_age), params$min_age))
-  int <- sum(params$flw_int, params$flw_int*params$microbe_off*params$flw_microbe$rel_diff, na.rm = T)
-  mu <- invlogit(sum(int, params$flw_slope*log(xb), na.rm = T))
-  seeds <- mu*1000 # I'm going to pull flw counts from the greenhouse
+  if(params$season %in% c("winter", "spring")){
+    flw_prob <- 0
+  }else{
+    int <- (params$flw_int + params$flw_int*params$microbe_off*params$flw_microbe$rel_diff)
+  
+  flw_prob <- invlogit(int + params$flw_slope*log(xb))
+  }
+  flw_count <- exp(params$flw_count_int)
+  # note that this is really flw counts, but I assume there is a high success from flw to seed
+  seeds <- flw_prob*flw_count # I'm pulling flw counts from the greenhouse; currently this does not depend on size/age, but I have that data in the greenhouse
   return(seeds)
 }
 
 sdlg.fx<-function(params){
-  int <- params$sdlf.flw_int + params$sdlf.flw_int*params$microbe_off*params$flw_microbe$rel_diff
-  mu <- invlogit(int)
-  seeds <- mu*1000 # I'm going to pull flw counts from the greenhouse
+  if(params$season %in% c("winter", "spring")){
+    flw_prob <- 0
+  }else{
+  int <- params$sdlg.flw_int + params$sdlg.flw_int*params$microbe_off*params$flw_microbe$rel_diff
+  flw_prob <- invlogit(int)
+  }
+  flw_count <- exp(params$flw_count_int)
+  seeds <- flw_prob*flw_count # I'm pulling flw counts from the greenhouse
   return(seeds)
 }
 
 
 recruitment <- function(params){
+  int <- params$recruit_int/params$recruit_adjust
   rec <- exp(params$recruit_int + params$recruit_int*params$microbe_off*params$germ_microbe$rel_diff)
   return(rec)
 }
@@ -207,29 +224,54 @@ seed_bank <- function(params){
 
 
 # Bigmatrix function ------------------------------------------------------
-bigmatrix<-function(params,models,matdim, extension=1){  
-  Lb <- params$min_age # size range of the data, extension here adds sizes smaller than min size which accounts for probability density lost at predicted sizes smaller than our lower bound
-  Ub <- params$max_age+extension # size range of the data, extension here adds sizes larger than max size which accounts for probability density lost at predicted sizes larger than our upper bound
-  # h <- (Ub-Lb)/matdim 
-  # y <- Lb + (1:matdim)*h - h/2# implementing the midpoint rule to create a vector of sizes from min to max (+ extension)
-  #fertility transition
-  Fmat <- matrix(0,matdim+1,matdim+1) # +1 dimension for  seedbank
+bigmatrix<-function(params,models, extension=1){  
+  matdim <- params$max_age+extension # size range of the data, extension here adds sizes larger than max size which accounts for probability density lost at predicted sizes larger than our upper bound
+  y <- 1:matdim 
+    #fertility transition
+  Fmat <- matrix(0,matdim+1,matdim+1) # +2 dimension for  seedbank 
   
-  
-  Fmat[2:(matdim+1), 2:matdim+1]<-fx(x = y, params)*recruitment(params) # seeds recruiting immediately
-  Fmat[1,2:(matdim+1)] <- seed_production(x = y, models, params)
+
+  Fmat[1,2] <- sdlg.fx(params) - sdlg.fx(params)*recruitment(params) 
+  Fmat[1,3:(matdim+1)] <- fx(y[-1],params) - fx(y[-1],params)*recruitment(params) 
+  Fmat[2,2] <-   sdlg.fx(params)*recruitment(params) # recruiting directly as seedling
+  Fmat[2,3:(matdim+1)] <- fx(y[-1],params)*recruitment(params) # recruiting directly as seedling
+    
   Fmat[1,1] <- seed_bank(params)
+  Fmat[2,1] <- 1- recruitment(params)
   
+
   #growth/survival transition
   Tmat <-matrix(0,matdim+1,matdim+1)
-  Tmat[2:(matdim+1),1] <- emergence(y,models=models,params=params)
+  Tmat[2,1] <- sdlg.s(params)
+  
+  # assign survival probability to the subdiagonal
+  diag(Tmat[-1,-ncol(Tmat)])[-1] <- sx(y[-1], params)
 
   
-  Tmat[2:(matdim+1),2:(matdim+1)] <- h*t(outer(y,y, pxy,models=models,params=params))
-  
+
   MPMmat<-Tmat + Fmat
   return(list(MPMmat = MPMmat, Tmat = Tmat, Fmat = Fmat))
 }
+
+
+# Annual transition matrix as product of seasonal (spring, summer, autumn, winter) matrices
+# P is spring to summer, Q is summer to autumn, R is autumn to winter, S is winter to spring
+annual.matrix <- function(P, Q, R, S, interval){
+  if(interval == "spring"){
+    Annual <- S %*% R %*% Q %*% P
+  }
+  if(interval == "summer"){
+    Annual <- P %*% S %*% R %*% Q
+  }
+  if(interval == "fall"){
+    Annual <- Q %*% P %*% S %*% R
+  }
+  if(interval == "winter"){
+    Annual <- R %*% Q %*% P %*% S
+  }
+  
+  return(Annual)
+} 
 
 # checking for eviction
 # plot(y, sx(y,models,params), xlab="size", type="l",

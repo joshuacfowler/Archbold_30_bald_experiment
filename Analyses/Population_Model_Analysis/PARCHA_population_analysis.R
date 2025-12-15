@@ -40,12 +40,16 @@ parcha.adult.flowering <- readRDS("parcha.adult.flowering.rds")
 parcha.seedling.flowering <- readRDS("parcha.seedling.flowering.rds")
 parcha.recruitment <- readRDS("parcha.recruitment.rds")
 
+parcha.flw_number <- readRDS("parcha.flw_number.rds") # from greenhouse
+
+
 
 adult.surv_par <- as.data.frame(parcha.adult.survival)
 seedling.surv_par <- as.data.frame(parcha.seedling.survival)
 adult.flw_par <- as.data.frame(parcha.adult.flowering)
 seedling.flw_par <- as.data.frame(parcha.seedling.flowering)
 recruit_par <- as.data.frame(parcha.recruitment)
+flw_number_par <- as.data.frame(parcha.flw_number)
 
 
 # reading in the predicted microbial effects from the 30 bald experiment
@@ -164,21 +168,18 @@ preddata <- preddata_1 %>%
 ####################################################################################
 ###### Calculating population summaries ####################################
 ####################################################################################
-# Taking seed dynamics from Hindle et al. "The two fertility scenarios which produced dynamics best fitting to the observed population dynamics were low first year germination (c_f=0), low germination from the seed bank (c_b=0.005), and low seed mortality (d=0.3) and low first year germination (c_f=0), high germination from the seed bank (c_b=0.04), and relatively high seed mortality (d=0.7; Fig. A5). "
-models <- make_mods(seedling_surv = parcha.seedling.survival, 
-                    surv = parcha.adult.survival,
-                    seedling_flw = parcha.seedling.flowering, 
-                    flw = parcha.adult.flowering,
-                    recruitment = parcha.recruitment)
+
 params <- make_params(post_draws = post_draws,
-                      iter = i,
+                      iter = 2,
                       bald.rfx = T, bald = 12, year.rfx = F,
                       surv_par = adult.surv_par, sdlg_surv_par = seedling.surv_par, 
                       flw_par = adult.flw_par, sdlg_flw_par = seedling.flw_par, 
-                      season = "winter",
+                      flw_count_par = flw_number_par,
+                      season = "summer",
                       recruit_par = recruit_par,
-                      seed_mortality = 0.001,
-                      microbe = 0,
+                      seed_mortality = 0.9,
+                      recruitment_adjustment = .001,
+                      microbe = 1,
                       preddata = preddata,
                       germ_microbe = germ_30bald_predictions,
                       grow_microbe = grow_30bald_predictions,
@@ -187,9 +188,8 @@ params <- make_params(post_draws = post_draws,
 
 
 
-
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 3
+ndraws <- 10
 nbalds <- length(unique(preddata$bald)[1:3])
 nmicrobe <- 2
 
@@ -198,6 +198,101 @@ post_draws <- sample.int(7500,size=ndraws) # The models except for seedling grow
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
 lambda <- array(NA, dim = c(ndraws, nbalds, nmicrobe))
-params_list <- matrix_list <- matrix_balds <- matrix_iter <- list()
+params_spring_list <- params_summer_list <- params_fall_list <-params_winter_list <- list()
+matrix_list <- list()
+
+for(i in 1:ndraws){
+  for(b in 1:nbalds){
+    for(m in 1:nmicrobe){
+      params_spring_list[[paste(paste0("iter",c(1:ndraws)[i]),balds[b],c("live", "sterile")[m],  sep = "_")]] <- make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
+                                                                                                                     post_draws = post_draws,
+                                                                                                                     iter = i,
+                                                                                                                     microbe = microbe[m],
+                                                                                                                     surv_par = adult.surv_par, sdlg_surv_par = seedling.surv_par, 
+                                                                                                                     flw_par = adult.flw_par, sdlg_flw_par = seedling.flw_par, 
+                                                                                                                     flw_count_par = flw_number_par,
+                                                                                                                     season = "spring",
+                                                                                                                     recruit_par = recruit_par,
+                                                                                                                     seed_mortality = 0.9,
+                                                                                                                     recruitment_adjustment = .001,
+                                                                                                                     preddata = preddata,
+                                                                                                                     germ_microbe = germ_30bald_predictions,
+                                                                                                                     grow_microbe = grow_30bald_predictions,
+                                                                                                                     flw_microbe = flw_30bald_predictions,
+                                                                                                                     size_bounds = size_bounds_df)
+      params_summer_list[[paste(paste0("iter",c(1:ndraws)[i]),balds[b],c("live", "sterile")[m],  sep = "_")]] <- make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
+                                                                                                                             post_draws = post_draws,
+                                                                                                                             iter = i,
+                                                                                                                             microbe = microbe[m],
+                                                                                                                             surv_par = adult.surv_par, sdlg_surv_par = seedling.surv_par, 
+                                                                                                                             flw_par = adult.flw_par, sdlg_flw_par = seedling.flw_par, 
+                                                                                                                             flw_count_par = flw_number_par,
+                                                                                                                             season = "summer",
+                                                                                                                             recruit_par = recruit_par,
+                                                                                                                             seed_mortality = 0.9,
+                                                                                                                             recruitment_adjustment = .001,
+                                                                                                                             preddata = preddata,
+                                                                                                                             germ_microbe = germ_30bald_predictions,
+                                                                                                                             grow_microbe = grow_30bald_predictions,
+                                                                                                                             flw_microbe = flw_30bald_predictions,
+                                                                                                                             size_bounds = size_bounds_df)
+      params_fall_list[[paste(paste0("iter",c(1:ndraws)[i]),balds[b],c("live", "sterile")[m],  sep = "_")]] <- make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
+                                                                                                                             post_draws = post_draws,
+                                                                                                                             iter = i,
+                                                                                                                             microbe = microbe[m],
+                                                                                                                             surv_par = adult.surv_par, sdlg_surv_par = seedling.surv_par, 
+                                                                                                                             flw_par = adult.flw_par, sdlg_flw_par = seedling.flw_par, 
+                                                                                                                             flw_count_par = flw_number_par,
+                                                                                                                             season = "fall",
+                                                                                                                             recruit_par = recruit_par,
+                                                                                                                             seed_mortality = 0.9,
+                                                                                                                             recruitment_adjustment = .001,
+                                                                                                                             preddata = preddata,
+                                                                                                                             germ_microbe = germ_30bald_predictions,
+                                                                                                                             grow_microbe = grow_30bald_predictions,
+                                                                                                                             flw_microbe = flw_30bald_predictions,
+                                                                                                                             size_bounds = size_bounds_df)
+      params_winter_list[[paste(paste0("iter",c(1:ndraws)[i]),balds[b],c("live", "sterile")[m],  sep = "_")]] <- make_params(bald.rfx = T, bald = balds[b], year.rfx = F,
+                                                                                                                             post_draws = post_draws,
+                                                                                                                             iter = i,
+                                                                                                                             microbe = microbe[m],
+                                                                                                                             surv_par = adult.surv_par, sdlg_surv_par = seedling.surv_par, 
+                                                                                                                             flw_par = adult.flw_par, sdlg_flw_par = seedling.flw_par, 
+                                                                                                                             flw_count_par = flw_number_par,
+                                                                                                                             season = "winter",
+                                                                                                                             recruit_par = recruit_par,
+                                                                                                                             seed_mortality = 0.9,
+                                                                                                                             recruitment_adjustment = .01,
+                                                                                                                             preddata = preddata,
+                                                                                                                             germ_microbe = germ_30bald_predictions,
+                                                                                                                             grow_microbe = grow_30bald_predictions,
+                                                                                                                             flw_microbe = flw_30bald_predictions,
+                                                                                                                             size_bounds = size_bounds_df)
+    }
+    # matrix_balds[[b]] <- matrix_list 
+  }
+  # matrix_iter[[i]] <- matrix_balds
+  print(paste("iteration", i))
+}
 
 
+return_MPM <- function(params,...) {
+  bigmatrix(params = params,...)$MPMmat
+}
+
+matrix_spring_list <- mclapply(X = params_spring_list, FUN = return_MPM, models = models, extension = 1) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+matrix_summer_list <- mclapply(X = params_summer_list, FUN = return_MPM, models = models, extension = 1) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+matrix_fall_list <- mclapply(X = params_fall_list, FUN = return_MPM, models = models, extension = 1) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+matrix_winter_list <- mclapply(X = params_winter_list, FUN = return_MPM, models = models, extension = 1) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+
+matrix_annual_list <- list()
+for(i in 1:(ndraws*nbalds*nmicrobe)){
+matrix_annual_list[[i]] <- annual.matrix(P = matrix_spring_list[[i]], Q = matrix_summer_list[[i]], R = matrix_fall_list[[i]], S = matrix_winter_list[[i]], interval = "spring")
+}
+
+lambda_list <- lapply(X = matrix_annual_list, FUN = popbio::lambda) # for already fast operations, the parallelization isn't faster, but it's trivial
+names(lambda_list) <- names(matrix_spring_list)
+lambda_df <- enframe(lambda_list) %>% 
+  unnest(cols = c("name", "value")) %>% 
+  separate(name, into = c("Iter", "Bald", "Microbe")) %>% 
+  rename(lambda=value)
