@@ -87,7 +87,8 @@ PARCHA_surv.df <- PARCHA_covariates %>%
   fill(census_end, .direction = "updown") %>% 
   fill(census_start, .direction = "updown") %>% 
   ungroup() %>% 
-  mutate(log_age.t = case_when(is.na(age_in_months.t) ~ NA, TRUE ~ log(census_number-1)),
+  mutate(age.t = case_when(is.na(age_in_months.t) ~ NA, TRUE ~ census_number-1),
+         log_age.t = case_when(is.na(age_in_months.t) ~ NA, TRUE ~ log(census_number-1)),
          time_since_fire = time_since_fire_actual) %>% 
   mutate(season = case_when(month.t1 %in% c(3,4,5) ~ "spring",
                             month.t1 %in% c(6,7,8) ~ "summer",
@@ -116,7 +117,8 @@ PARCHA_flw.df <- PARCHA_covariates %>%
   fill(census_end, .direction = "updown") %>% 
   fill(census_start, .direction = "updown") %>% 
   ungroup() %>% 
-  mutate(log_age.t = case_when(is.na(age_in_months.t) ~ NA, TRUE ~ log(census_number-1)),
+  mutate(age.t = case_when(is.na(age_in_months.t) ~ NA, TRUE ~ (census_number-1)),
+         log_age.t = case_when(is.na(age_in_months.t) ~ NA, TRUE ~ log(census_number-1)),
          time_since_fire = time_since_fire_actual) %>% 
   mutate(season = case_when(month.t1 %in% c(3,4,5) ~ "spring",
                             month.t1 %in% c(6,7,8) ~ "summer",
@@ -137,7 +139,7 @@ PARCHA_recruit.df <- PARCHA_covariates %>%
   group_by(time_since_fire, rel_elev, bald, plot, year.t1, month.t1, .drop = FALSE) %>%
   dplyr::summarize(recruits = sum(birth_month == month.t1  & birth_year == year.t1, na.rm = T),
                    reproductives = sum(flw.t == 1, na.rm = T),
-                   reproductives_lag = sum(sum(flw.t == 1, na.rm = T), sum(lag(flw.t, 1) == 1, na.rm = T), sum(lag(flw.t, 1) == 2, na.rm = T), sum(lag(flw.t, 1) == 2, na.rm = T)),
+                   reproductives_lag = sum(sum(flw.t == 1, na.rm = T), sum(lag(flw.t, 1) == 1, na.rm = T), sum(lag(flw.t, 2) == 1, na.rm = T), sum(lag(flw.t, 3) == 1, na.rm = T)),
                    ) %>% 
   filter(!is.na(recruits)) %>% 
   mutate(season = case_when(month.t1 %in% c(3,4,5) ~ "spring",
@@ -146,7 +148,12 @@ PARCHA_recruit.df <- PARCHA_covariates %>%
                             month.t1 %in% c(12,1,2) ~ "winter")) %>% 
   filter(!is.na(time_since_fire))
 
+recruit_ratio <- PARCHA_recruit.df %>% 
+  group_by(bald, season) %>% 
+  summarize(ratio = mean(recruits/reproductives_lag, na.rm = T))
 
+ggplot(PARCHA_recruit.df %>% filter(reproductives>0))+
+  geom_point(aes(x = reproductives_lag, y = recruits))
 #   
 # ggplot(PARCHA_recruit.df)+
 #   geom_point(aes(y = recruits, x = month.t1))
@@ -489,7 +496,7 @@ ggplot(data = prediction_df)+
 ####################################################################################
 # Recruitment model ------------------------------------------------------------------
 ####################################################################################
-# I'm basically assuming that each of the balds have equivalent full seedbands, and this gives a reasonable approx of how germination varies across balds/years
+# I'm basically assuming that each of the balds have equivalent full seedbanks, and this gives a reasonable approx of how germination varies across balds/years
 parcha.recruitment <- brm(recruits~ 0 + season + rel_elev + time_since_fire + (1|year.t1) + (1|bald), data = PARCHA_recruit.df,
                               #flw.t1~ 1 + log_age.t, data = PARCHA_flw.df,
                               family = negbinomial(),
