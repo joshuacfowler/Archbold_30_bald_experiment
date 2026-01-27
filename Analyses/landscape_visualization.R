@@ -264,12 +264,10 @@ lambda_df <- bind_rows(ERYCUN_bald_lambda, PARCHA_bald_lambda)
 
 lambda_summary <- lambda_df %>% 
   filter(!is.na(lambda)) %>% 
-  group_by(spp_code, Bald, Microbe) %>% 
+  group_by(spp_code, Bald, bald, Microbe, rel_elev, time_since_fire, longitude, latitude) %>% 
   summarize(lambda_mean = mean(lambda),
             lambda_97.5 = quantile(lambda, 0.975),
-            lambda_02.5 = quantile(lambda, 0.025), 
-            rel_elev = unique(rel_elev), 
-            time_since_fire = unique(time_since_fire)) %>% 
+            lambda_02.5 = quantile(lambda, 0.025)) %>% 
   filter(!(spp_code == "PARCHA" & lambda_mean>1))
 
 my_palette <- c("#000000", "#009E73")
@@ -369,5 +367,156 @@ lambda_map.PARCHA <- ggmap(archbold_satellite)+
 
 lambda_map.PARCHA
 ggsave(lambda_map.PARCHA, filename = "~/Documents/R_projects/Archbold_30_bald_experiment/lambda_map_PARCHA.png", width = 5, height = 6)
+
+
+
+
+####################################################################################
+####### trying to calculate metapopulation capacity   #######
+####################################################################################
+
+# trying to calculate metapopulation persistence:
+bald_areas<- read_xlsx(path = "~/Dropbox/UofMiami/Balds2009_FireIntensityArea_Through2022.xlsx", sheet = "abs_RosemaryBalds2009", guess_max = 1048576) %>% # guess_max makes the function look deeper in the columns to assign type
+  select(BALD_, `Bald_U...5`, Area) %>% 
+  rename(Bald = Bald_U...5)
+
+
+
+lambda_meta <- lambda_summary %>% 
+  left_join(bald_areas, by = join_by(bald == Bald)) %>% 
+  # mutate(bald_code = as.character(BALD_)) %>% 
+  ungroup() %>% 
+  mutate(lambda_overall_mean = mean(lambda_mean, na.rm = T),
+         patch_quality = lambda_mean/lambda_overall_mean) %>% 
+  filter(!is.na(longitude))
+
+# ERYCUN
+lambda_meta_live.ERYCUN <- data.frame(latitude = filter(lambda_meta, Microbe == "live" & spp_code == "ERYCUN")$latitude,
+                               longitude = filter(lambda_meta, Microbe == "live"& spp_code == "ERYCUN")$longitude)
+rownames(lambda_meta_live.ERYCUN) <- filter(lambda_meta, Microbe == "live"& spp_code == "ERYCUN")$Bald
+
+
+lambda_meta_sterile.ERYCUN <- data.frame(latitude = filter(lambda_meta, Microbe == "sterile" & spp_code == "ERYCUN")$latitude,
+                                  longitude = filter(lambda_meta, Microbe == "sterile" & spp_code == "ERYCUN")$longitude)
+rownames(lambda_meta_sterile.ERYCUN) <- filter(lambda_meta, Microbe == "sterile" & spp_code == "ERYCUN")$Bald
+
+patch_quality_live.ERYCUN <- filter(lambda_meta, Microbe == "live"& spp_code == "ERYCUN")$patch_quality
+patch_quality_sterile.ERYCUN <-  filter(lambda_meta, Microbe == "sterile"& spp_code == "ERYCUN")$patch_quality
+
+patch_area_live.ERYCUN  <- filter(lambda_meta, Microbe == "live"& spp_code == "ERYCUN")$Area
+patch_area_sterile.ERYCUN  <- filter(lambda_meta, Microbe == "sterile"& spp_code == "ERYCUN")$Area
+
+distance_live.ERYCUN  <- dist(lambda_meta_live.ERYCUN, diag=T, upper=T)
+distance_sterile.ERYCUN  <- dist(lambda_meta_sterile.ERYCUN, diag=T, upper=T)
+
+# PARCHA
+lambda_meta_live.PARCHA <- data.frame(latitude = filter(lambda_meta, Microbe == "live" & spp_code == "PARCHA")$latitude,
+                                      longitude = filter(lambda_meta, Microbe == "live"& spp_code == "PARCHA")$longitude)
+rownames(lambda_meta_live.PARCHA) <- filter(lambda_meta, Microbe == "live"& spp_code == "PARCHA")$Bald
+
+
+lambda_meta_sterile.PARCHA <- data.frame(latitude = filter(lambda_meta, Microbe == "sterile" & spp_code == "PARCHA")$latitude,
+                                         longitude = filter(lambda_meta, Microbe == "sterile" & spp_code == "PARCHA")$longitude)
+rownames(lambda_meta_sterile.PARCHA) <- filter(lambda_meta, Microbe == "sterile" & spp_code == "PARCHA")$Bald
+
+patch_quality_live.PARCHA <- filter(lambda_meta, Microbe == "live"& spp_code == "PARCHA")$patch_quality
+patch_quality_sterile.PARCHA <-  filter(lambda_meta, Microbe == "sterile"& spp_code == "PARCHA")$patch_quality
+
+patch_area_live.PARCHA  <- filter(lambda_meta, Microbe == "live"& spp_code == "PARCHA")$Area
+patch_area_sterile.PARCHA  <- filter(lambda_meta, Microbe == "sterile"& spp_code == "PARCHA")$Area
+
+distance_live.PARCHA  <- dist(lambda_meta_live.PARCHA, diag=T, upper=T)
+distance_sterile.PARCHA  <- dist(lambda_meta_sterile.PARCHA, diag=T, upper=T)
+
+
+
+
+# calculating landscape matrices
+M_live.ERYCUN <-  as.matrix(exp(-2*distance_live.ERYCUN)*(patch_quality_live.ERYCUN*patch_area_live.ERYCUN))
+M_sterile.ERYCUN <-  exp(-2*distance_sterile.ERYCUN)*patch_quality_sterile.ERYCUN*patch_area_sterile.ERYCUN
+
+capacity_live.ERYCUN <- Re(eigen(M_live.ERYCUN)$values[1])
+capacity_sterile.ERYCUN <- Re(eigen(M_sterile.ERYCUN)$values[1])
+
+percent_change_capacity.ERYCUN <- (capacity_live.ERYCUN-capacity_sterile.ERYCUN)/capacity_sterile.ERYCUN*100
+ratio_capacity.ERYCUN <- (capacity_live.ERYCUN/capacity_sterile.ERYCUN)
+
+# parcha
+M_live.PARCHA <-  as.matrix(exp(-2*distance_live.PARCHA)*(patch_quality_live.PARCHA*patch_area_live.PARCHA))
+M_sterile.PARCHA <-  exp(-2*distance_sterile.PARCHA)*patch_quality_sterile.PARCHA*patch_area_sterile.PARCHA
+
+capacity_live.PARCHA <- Re(eigen(M_live.PARCHA)$values[1])
+capacity_sterile.PARCHA <- Re(eigen(M_sterile.PARCHA)$values[1])
+
+percent_change_capacity.PARCHA <- (capacity_live.PARCHA-capacity_sterile.PARCHA)/capacity_sterile.PARCHA*100
+ratio_capacity.PARCHA <- (capacity_live.PARCHA/capacity_sterile.PARCHA)
+
+
+
+
+
+library(ggraph)
+library(igraph)
+nearest_adj <- distance_live.ERYCUN
+distance_df <- reshape2::melt(as.matrix(distance_live.ERYCUN), varnames = c("from", "to")) %>% 
+  group_by(from) %>% 
+  mutate(first_value = sort(value)[2],
+         second_value = sort(value)[3],
+         third_value = sort(value)[4],
+         fourth_value = sort(value)[5],
+         fifth_value = sort(value)[6]) %>% 
+  filter(value %in% c(first_value, second_value, third_value, fourth_value, fifth_value)) %>% select(-first_value, -second_value, -third_value, -fourth_value, -fifth_value)
+
+
+live_metapop_graph <- graph_from_data_frame(distance_df)
+sterile_metapop_graph <- graph_from_data_frame(distance_df)
+
+lo.live <- norm_coords(as.matrix(lambda_meta_live.ERYCUN[, c("longitude","latitude")]),
+                  xmin = min(lambda_meta_live.ERYCUN$longitude)-.01,
+                  xmax = max(lambda_meta_live.ERYCUN$longitude)+.01,
+                  ymin = min(lambda_meta_live.ERYCUN$latitude)-.01,
+                  ymax = max(lambda_meta_live.ERYCUN$latitude)+.01)
+
+lo.sterile <- norm_coords(as.matrix(lambda_meta_sterile.ERYCUN[, c("longitude","latitude")]),
+                       xmin = min(lambda_meta_sterile.ERYCUN$longitude)-.01,
+                       xmax = max(lambda_meta_sterile.ERYCUN$longitude)+.01,
+                       ymin = min(lambda_meta_sterile.ERYCUN$latitude)-.01,
+                       ymax = max(lambda_meta_sterile.ERYCUN$latitude)+.01)
+
+
+V(live_metapop_graph)$x<-lo.live[,1]
+V(live_metapop_graph)$y<-lo.live[,2]
+V(live_metapop_graph)$quality   = patch_quality_live.ERYCUN #filter(lambda_diff_summary, spp_code == "ERYCUN",!is.na(longitude))$rel_diff_mean
+
+
+V(sterile_metapop_graph)$x<-lo.sterile[,1]
+V(sterile_metapop_graph)$y<-lo.sterile[,2]
+V(sterile_metapop_graph)$quality   = patch_quality_sterile.ERYCUN 
+
+
+
+
+live_metapop_plot <- ggraph(live_metapop_graph, layout = lo.live, rescale = FALSE)+
+  geom_edge_link(color = "grey", alpha = .3) + 
+  geom_node_point(aes(fill = quality), size = 3, shape = 21, alpha = .6, show.legend = FALSE)+
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red")+
+  coord_sf()+
+  # coord_sf()+
+  theme_void()
+live_metapop_plot
+
+ggsave(live_metapop_plot, filename = "~/Documents/R_projects/Archbold_30_bald_experiment/ERYCUN_live_metapop_graph.png",  width = 5, height = 6)
+
+sterile_metapop_plot <- ggraph(sterile_metapop_graph, layout = lo.sterile, rescale = FALSE)+
+  geom_edge_link(color = "grey", alpha = .3) + 
+  geom_node_point(aes(fill = quality), size = 3, shape = 21, alpha = .6, show.legend = FALSE)+
+  scale_fill_gradient(low = "white", high = "grey25")+
+  coord_sf()+
+  # coord_sf()+
+  theme_void()
+sterile_metapop_plot
+ggsave(sterile_metapop_plot, filename = "~/Documents/R_projects/Archbold_30_bald_experiment/ERYCUN_sterile_metapop_graph.png",  width = 5, height = 6)
+
+
 
 
