@@ -398,7 +398,6 @@ ggplot(abund_ITS.ESV)+
   theme_minimal() + theme(axis.text.x = element_text(hjust = 1, angle = 45))
 
 
-
 # plotting just the top 5 most abundant
 top5_16S.ESV <- abund_16S.ESV %>% 
   group_by(soil_source, sample_id) %>% 
@@ -424,6 +423,9 @@ ggplot(top5_ITS.ESV)+
 
 
 
+##########################################################################################
+######## assigning functional guild to the fungi #########################################
+##########################################################################################
 
 
 

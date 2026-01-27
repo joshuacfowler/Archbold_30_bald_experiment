@@ -193,11 +193,11 @@ params <- make_params(iter = 1,
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 50
-nbalds <- 5#length(unique(preddata$bald))
+ndraws <- 500
+nbalds <- length(unique(preddata$bald))
 nmicrobe <- 2
 
-balds <- unique(preddata$bald)[1:5]
+balds <- unique(preddata$bald)
 post_draws <- sample.int(7500,size=ndraws) # The models except for seedling growth have 7500 iterations. That one has more (15000 iterations) to help it converge.
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
@@ -207,7 +207,7 @@ params_spring_list <- params_summer_list <- params_fall_list <-params_winter_lis
 # optional parameters describing unknown parts of the life cycle
 recruit_adjust <- .15
 flw_to_seed <- .15
-seed_mortality <- .99
+seed_mortality <- .9
 
 for(i in 1:ndraws){
   for(b in 1:nbalds){
@@ -293,10 +293,10 @@ return_MPM <- function(params,...) {
   bigmatrix(params = params,...)$MPMmat
 }
 
-matrix_spring_list <- mclapply(X = params_spring_list, FUN = return_MPM, extension = 4) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
-matrix_summer_list <- mclapply(X = params_summer_list, FUN = return_MPM, extension = 4) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
-matrix_fall_list <- mclapply(X = params_fall_list, FUN = return_MPM, extension = 4) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
-matrix_winter_list <- mclapply(X = params_winter_list, FUN = return_MPM, extension = 4) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+matrix_spring_list <- mclapply(X = params_spring_list, FUN = return_MPM, extension = 4, mc.cores = 6) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+matrix_summer_list <- mclapply(X = params_summer_list, FUN = return_MPM, extension = 4, mc.cores = 6) 
+matrix_fall_list <- mclapply(X = params_fall_list, FUN = return_MPM, extension = 4, mc.cores = 6) 
+matrix_winter_list <- mclapply(X = params_winter_list, FUN = return_MPM, extension = 4, mc.cores = 6) 
 
 matrix_annual_list <- lambda_list <-  list()
 for(i in 1:length(matrix_winter_list)){
@@ -309,6 +309,7 @@ lambda_df <- enframe(lambda_list) %>%
   unnest(cols = c("name", "value")) %>% 
   separate(name, into = c("Iter", "Bald", "Microbe")) %>% 
   rename(lambda=value)
+write_csv(lambda_df, "PARCHA_bald_lambdas.csv")
 
 
 lambda_summary <- lambda_df %>% 
@@ -320,7 +321,7 @@ lambda_summary <- lambda_df %>%
 
 ggplot()+
   geom_hline(aes(yintercept = 1), linetype = "dashed")+
-  geom_jitter(data = lambda_df, aes(x = Bald, y = lambda), width = .05, alpha = .4)+
+  # geom_jitter(data = lambda_df, aes(x = Bald, y = lambda), width = .05, alpha = .4)+
   geom_point(data = lambda_summary, aes(x = Bald, y = lambda_mean, color = Microbe, group = "microbe"), size = 4)+
   geom_linerange(data = lambda_summary, aes(x = Bald, ymin = lambda_02.5, ymax = lambda_97.5, color = Microbe), lwd = 1)+
   # ylim(0,10)+

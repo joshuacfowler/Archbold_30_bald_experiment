@@ -189,11 +189,11 @@ models <- make_mods(grow = erycun.growth, surv = erycun.survival, flw = erycun.f
 
 
 # we can calculate lambda, but we might also consider later looking at effects of microbes on quantities like the stable stage distribution etc.
-ndraws <- 3
-nbalds <- length(unique(preddata$bald)[1:3])
+ndraws <- 500
+nbalds <- length(unique(preddata$bald))
 nmicrobe <- 2
 
-balds <- unique(preddata$bald)[1:3]
+balds <- unique(preddata$bald)
 post_draws <- sample.int(7500,size=ndraws) # The models except for seedling growth have 7500 iterations. That one has more (15000 iterations) to help it converge.
 
 microbe <- c(0,1) # 0 is alive, and 1 is sterile becuase we start with the microbes in the model, but then turn off the microbes
@@ -228,9 +228,10 @@ return_MPM <- function(params,...) {
   bigmatrix(params = params,...)$MPMmat
   }
 
-
+# parallel::detectCores()
 # system.time(matrix_list <- lapply(X = params_list, FUN = return_MPM, models = models, matdim = 25, extension = 2)) # note that lapply is vectorized, and takes about the same time as using for loops, at least for a few iterations
-system.time(matrix_list <- mclapply(X = params_list, FUN = return_MPM, models = models, matdim = 25, extension = 2)) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
+matrix_list <- mclapply(X = params_list, FUN = return_MPM, models = models, matdim = 25, extension = 2,
+                        mc.cores = parallel::detectCores()) # note that mclapply takes advantage of parallel computation and takes about half as much time as using lapply
 
 lambda_list <- lapply(X = matrix_list, FUN = popbio::lambda) # for already fast operations, the parallelization isn't faster, but it's trivial
 
@@ -238,7 +239,7 @@ lambda_df <- enframe(lambda_list) %>%
   unnest(cols = c("name", "value")) %>% 
   separate(name, into = c("Iter", "Bald", "Microbe")) %>% 
   rename(lambda=value)
-# write_csv(lambda_df, "prelim_IPM_lambdas.csv")
+write_csv(lambda_df, "ERYCUN_bald_lambdas.csv")
 
 
 
@@ -262,7 +263,7 @@ lambda_summary <- lambda_df %>%
 
 ggplot()+
   geom_hline(aes(yintercept = 1), linetype = "dashed")+
-  geom_jitter(data = lambda_df, aes(x = Bald, y = lambda), width = .05, alpha = .4)+
+  # geom_jitter(data = lambda_df, aes(x = Bald, y = lambda), width = .05, alpha = .4)+
   geom_point(data = lambda_summary, aes(x = Bald, y = lambda_mean, color = Microbe, group = "microbe"), size = 4)+
   geom_linerange(data = lambda_summary, aes(x = Bald, ymin = lambda_02.5, ymax = lambda_97.5, color = Microbe), lwd = 1)+
   # ylim(0,10)+

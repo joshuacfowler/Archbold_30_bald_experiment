@@ -302,19 +302,19 @@ summary(germ.m)
 # now incorporating the environmental covariates and a random effect
 
 
-formula <- bf(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire 
-                + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S
-                + spp_code*live_sterile*Dim1_ITS + spp_code*live_sterile*Dim2_ITS +
+formula <- bf(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire +
+                # + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S
+                # + spp_code*live_sterile*Dim1_ITS + spp_code*live_sterile*Dim2_ITS +
                 (1|soil_source),
-              zi ~ 1 + spp_code*live_sterile)
+              zi ~ -1 + spp_code*live_sterile)
 germ.m <- brm(formula, data = germ.covariates,
               family = "zero_inflated_binomial",
               # family = binomial(link = "logit"),
               prior = c(set_prior("normal(0,1)", class = "b"),
                         set_prior("normal(0,1)", class = "b", dpar = "zi")),
               warmup = mcmc_pars$warmup, iter = mcmc_pars$iter, chains = mcmc_pars$chains)
-saveRDS(germ.m, file = "30_bald_germ.m.Rds")
-germ.m <- readRDS(germ.m, file = "30_bald_germ.m.Rds")
+saveRDS(germ.m, file = "30_bald_germ.Rds")
+germ.m <- readRDS(germ.m, file = "30_bald_germ.Rds")
 
 # germ.m <- brm(TotalGerm|trials(total_seeds) ~ -1 + spp_code*live_sterile*rel_elev + spp_code*live_sterile*time_since_fire 
 #               + spp_code*live_sterile*Dim1_16S + spp_code*live_sterile*Dim2_16S 
@@ -338,18 +338,20 @@ pp_check(germ.m,ndraws = 100, type = "stat_grouped",stat = "sd", group = "spp_co
 
 # Making prediction dataframe
 prediction_df.1 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile),
-                               rel_elev = c(median(germ.covariates$rel_elev,na.rm = T)), time_since_fire = seq(min(germ.covariates$time_since_fire,na.rm = T), max(germ.covariates$time_since_fire,na.rm = T), by = .2),
-                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
-                               Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
-                               Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
-                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+                               rel_elev = c(median(germ.covariates$rel_elev,na.rm = T)), time_since_fire = seq(min(germ.covariates$time_since_fire,na.rm = T), max(germ.covariates$time_since_fire,na.rm = T), by = .2)
+)
+                               # Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+                               # Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+                               # Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+                               # Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
 
 prediction_df.2 <- expand.grid(spp_code = unique(germ.covariates$spp_code), total_seeds = 1, soil_source = NA, live_sterile = unique(germ.covariates$live_sterile), 
-                               rel_elev = seq(min(germ.covariates$rel_elev,na.rm = T), max(germ.covariates$rel_elev,na.rm = T), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T)),
-                               Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
-                               Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
-                               Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
-                               Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
+                               rel_elev = seq(min(germ.covariates$rel_elev,na.rm = T), max(germ.covariates$rel_elev,na.rm = T), by = .2), time_since_fire = c(median(germ.covariates$time_since_fire, na.rm = T))
+)
+                               # Dim1_16S = mean(germ.covariates$Dim1_16S,na.rm = T),
+                               # Dim2_16S = mean(germ.covariates$Dim2_16S,na.rm = T),
+                               # Dim1_ITS = mean(germ.covariates$Dim1_ITS,na.rm = T),
+                               # Dim2_ITS = mean(germ.covariates$Dim2_ITS,na.rm = T))
 
 
 preds.1 <- fitted(germ.m, newdata = prediction_df.1, re_formula = NA)

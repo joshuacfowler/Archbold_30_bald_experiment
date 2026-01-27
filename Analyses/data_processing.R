@@ -1327,7 +1327,7 @@ PARCHA <- PARCHA_dates %>%
          flw.t1 = flowering,
          length.t1 = length,
          width.t1 = width,
-         height.t1 = height) %>% 
+         height.t1 = height) 
   mutate(year.t = dplyr::lag(year.t1,  n = 1, default = NA),
          month.t = dplyr::lag(month.t1,  n = 1, default = NA),
          census_date.t = dplyr::lag(census_date.t1,  n = 1, default = NA),
@@ -1814,6 +1814,10 @@ PARCHA_covariates$time_since_fire_actual <- PARCHA_covariates$year.t1 - PARCHA_c
 PARCHA_covariates$fire_frequency_actual <- unlist(Map(f = fire_frequency_fx, x = strsplit(unlist(PARCHA_covariates$fire_list), ", "), y= PARCHA_covariates$year.t1))
 
 
+PARCHA_covariates <- PARCHA_covariates %>% 
+  mutate(fire_frequency_actual = case_when(bald == "1S" ~ 0/(year.t1-1950),
+                                           TRUE ~ fire_frequency_actual)) %>% 
+  dplyr::select(-last_fire, -fire_frequency, -time_since_fire)
 
 
 
