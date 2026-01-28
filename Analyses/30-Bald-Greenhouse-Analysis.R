@@ -605,7 +605,7 @@ germ_bald_pred_coords <- germ_bald_pred_summary %>%
 
   
 # library(ggmap)
-register_google()#"AIzaSyB6JPEbC-deaZ5OpJc4vagnLm7v-69RmkM")
+register_google()#"")
 # 
 center_point <-  c(mean(bald_coords$longitude), mean(bald_coords$latitude))
 
